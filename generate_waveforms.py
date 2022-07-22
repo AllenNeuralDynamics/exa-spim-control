@@ -14,9 +14,9 @@ def generate_waveforms():
     etl_offset = 2.155 + etl_amplitude # volts
     camera_exposure_time = 15/1000*10640/1000 # sec
     camera_delay_time = 6.5/1000 # sec
-    etl_buffer_time = 50.0/1000 # sec
+    etl_buffer_time = 25.0/1000 # sec
     laser_buffer_time = 5.0/1000 # sec
-    rest_time = 90.4/1000 # sec
+    rest_time = 25.4/1000 # sec
     line_time = 5.0/1000 # sec
     pulse_time = 10.0/1000 # sec
     total_time = camera_exposure_time + etl_buffer_time + rest_time
@@ -45,7 +45,7 @@ def generate_waveforms():
     voltages_t[1, int(etl_buffer_samples/2.0)+camera_delay_samples:int(etl_buffer_samples/2.0) + camera_delay_samples + pulse_samples] = 5.0
 
     # Generate stage TTL signal
-    voltages_t[2, camera_exposure_samples + etl_buffer_samples + line_time_samples:camera_exposure_samples + etl_buffer_samples + line_time_samples + pulse_samples] = 0.0
+    voltages_t[2, camera_exposure_samples + etl_buffer_samples + line_time_samples:camera_exposure_samples + etl_buffer_samples + line_time_samples + pulse_samples] = 5.0
 
     # Generate laser TTL signal
     voltages_t[3, int(etl_buffer_samples/2.0)-laser_buffer_samples:int(etl_buffer_samples/2.0) + camera_exposure_samples + line_time_samples] = 5.0
