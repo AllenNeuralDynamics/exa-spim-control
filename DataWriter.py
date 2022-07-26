@@ -21,7 +21,7 @@ class DataWriter(object):
 	def __init__(self):
 
 		# TODO add these params into config
-		self.n_frames = 500 # frames
+		self.n_frames = 4000 # frames
 		self.datatype = 'uint16'
 		self.n_threads = 32 # threads
 		self.compression = PW.eCompressionAlgorithmShuffleLZ4 # available compressors in pyimariswriter header
@@ -31,12 +31,10 @@ class DataWriter(object):
 		self.sampling_y = 0.75 # um
 		self.sampling_z = 0.75 # um
 		self.chunk_size = 128 # frames
-		self.output_filename = 'D:\\test.ims'
 		self.thread = None
 		self.thread_list = []
-		self.block_index = PW.ImageSize()
 
-	def configure(self):
+	def configure(self, output_filename):
 
 		image_size=PW.ImageSize(x=self.cam_x, y=self.cam_y, z=self.n_frames, c=1, t=1) # TODO add channels, hard coded as 1 now
 		dimension_sequence=PW.DimensionSequence('x', 'y', 'z', 'c', 't')
@@ -46,18 +44,17 @@ class DataWriter(object):
 		options=PW.Options()
 		options.mNumberOfThreads=self.n_threads
 		options.mCompressionAlgorithmType=self.compression
-		options.mEnableLogProgress=True
+		options.mEnableLogProgress=False
 
 		application_name='PyImarisWriter'
 		application_version='1.0.0'
 
 		callback_class=MyCallbackClass()
 		self.converter=(PW.ImageConverter(self.datatype, image_size, sample_size, dimension_sequence, block_size,
-								self.output_filename, options, application_name, application_version, callback_class))
+								output_filename, options, application_name, application_version, callback_class))
 
-	def write_block(self, data):
-
-		self.thread = threading.Thread(target=self._write_block, args=(numpy.transpose(data,(2,1,0)),))
+	def write_block(self, data, chunk_num):
+		self.thread = threading.Thread(target=self._write_block, args=(numpy.transpose(data,(2,1,0)), chunk_num,))
 		self.thread.start() # start thread
 		self.thread_list.append(self.thread) # append thread to list of threads
 
@@ -79,7 +76,6 @@ class DataWriter(object):
 		self.converter.Finish(image_extents, parameters, time_infos, color_infos, adjust_color_range)
 		self.converter.Destroy()
 
-	def _write_block(self, data):
+	def _write_block(self, data, chunk_num):
 
-		self.converter.CopyBlock(data, self.block_index)
-		self.block_index.z += 1
+		self.converter.CopyBlock(data, PW.ImageSize(x = 0, y = 0, z = chunk_num, c = 0, t = 0))

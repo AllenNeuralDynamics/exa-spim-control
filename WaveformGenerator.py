@@ -8,10 +8,10 @@ class WaveformGenerator(object):
 
 	def __init__(self):
 
+		self.n_frames = 4000 # number of frames
 		self.devName = 'Dev1' 	# NI card address, i.e. Dev2
 		self.rate = 1e4 	# NI sampling rate, i.e. 1e3
-		self.period = 260/1000 # frame time period
-		self.n_frames = 500 # number of frames
+		self.period = 210/1000 # frame time period
 		self.ao_names_to_channels = ao_channels =   {'etl': 0, # TODO. use the lookup table of channel names to abstract away how they map to numbered AO channels
 													 'camera': 1,
 													 'stage': 2,
@@ -26,7 +26,7 @@ class WaveformGenerator(object):
 		self.camera_delay_time = 6.5/1000 # sec
 		self.etl_buffer_time = 25.0/1000 # sec
 		self.laser_buffer_time = 5.0/1000 # sec
-		self.rest_time = 75.4/1000 # sec
+		self.rest_time = 25.4/1000 # sec
 		self.line_time = 5.0/1000 # sec
 		self.pulse_time = 10.0/1000 # sec
 		self.total_time = self.camera_exposure_time + self.etl_buffer_time + self.rest_time

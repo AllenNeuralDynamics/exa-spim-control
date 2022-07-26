@@ -6,7 +6,7 @@ class Camera(object):
 	def __init__(self):
 
 		# TODO add these params into config
-		self.n_frames = 500 # frames
+		self.n_frames = 4000 # frames
 		self.cam_x = 14192 # pixels
 		self.cam_y = 10640 # pixels
 		self.ram_buffer = 8 # frames
@@ -14,11 +14,11 @@ class Camera(object):
 		self.dwell_time = 5000.0 # us
 		self.digital_gain = 1 #
 		self.timeout = 2000 # ms
+		self.gentl = EGenTL() # instantiate egentl
+		self.grabber = EGrabber(self.gentl) # instantiate egrabber
 
 	def configure(self):
 
-		self.gentl = EGenTL() # instantiate egentl
-		self.grabber = EGrabber(self.gentl) # instantiate egrabber
 		self.grabber.realloc_buffers(self.ram_buffer) # allocate RAM buffer N frames
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
 		self.grabber.remote.set("AcquisitionFrameRate", self.frame_rate) # set camera exposure fps

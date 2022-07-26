@@ -1,6 +1,7 @@
 import subprocess
 import os
 import glob
+import time
 
 class DataLogger(object):
 
@@ -14,6 +15,7 @@ class DataLogger(object):
 	def start(self, file):
 		self.file = file
 		self.cmd = subprocess.Popen(self.memento_path + " dump --output=" + self.source_path + "\\dump.memento --follow")
+		time.sleep(1) # takes time for memento to boot sometimes
 
 	def stop(self):
 

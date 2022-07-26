@@ -12,23 +12,34 @@ class FileTransfer(object):
 		self.source_path = 'D:\\'
 		self.destination_path = 'X:\\'
 
+	def start(self, files):
 
-	def start(self, file):
+		self.cmd_list = []
 
-		new_file = file
-		while os.path.exists(self.destination_path + new_file):
-			new_file = new_file + '_COPY'
+		for file in files:
 
-		os.rename(self.source_path + file, self.source_path + new_file)
+			new_file = file
+			duplicate = 0
+			while os.path.exists(self.destination_path + new_file):
+				duplicate += 1
+				new_file = file + '.' + str(duplicate)
 
-		cmd = subprocess.Popen(self.ftp + ' ' + self.source_path + new_file + ' ' + self.destination_path + ' ' + self.ftp_flags)
+			os.rename(self.source_path + file, self.source_path + new_file)
 
-		return cmd
+			cmd = subprocess.Popen(self.ftp + ' ' + self.source_path + new_file + ' ' + self.destination_path + ' ' + self.ftp_flags)
+			self.cmd_list.append(cmd)
 
 	def stop(self, cmd):
 
 		subprocess.call(['taskkill', '/F', '/T', '/PID',  str(cmd.pid)]) # terminate memento subprocess
 
-	def wait(self, cmd):
+	def wait(self):
 
-		cmd.wait()
+		for cmd in self.cmd_list:
+			cmd.wait()
+
+	def close(self):
+
+		for cmd in self.cmd_list:
+			cmd.kill()
+		self.cmd_list = []
