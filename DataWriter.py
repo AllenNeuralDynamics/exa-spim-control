@@ -20,21 +20,27 @@ class DataWriter(object):
 
 	def __init__(self):
 
-		# TODO add these params into config
-		self.n_frames = 4000 # frames
-		self.datatype = 'uint16'
-		self.n_threads = 32 # threads
-		self.compression = PW.eCompressionAlgorithmShuffleLZ4 # available compressors in pyimariswriter header
-		self.cam_x = 14192 # px
-		self.cam_y = 10640 # px
-		self.sampling_x = 0.75 # um
-		self.sampling_y = 0.75 # um
-		self.sampling_z = 0.75 # um
-		self.chunk_size = 128 # frames
 		self.thread = None
 		self.thread_list = []
 
-	def configure(self, output_filename):
+	def configure(self, cfg):
+
+		self.cfg = cfg
+		self.filename = self.cfg.filename
+		self.n_frames = self.cfg.n_frames
+		self.datatype = self.cfg.datatype
+		self.n_threads = self.cfg.n_threads
+		self.cam_x = self.cfg.cam_x
+		self.cam_y = self.cfg.cam_y
+		self.sampling_x = self.cfg.sampling_x
+		self.sampling_y = self.cfg.sampling_y
+		self.sampling_z = self.cfg.sampling_z
+		self.chunk_size = self.cfg.chunk_size
+
+		if self.compression = 'lz4'
+			self.compression = PW.eCompressionAlgorithmShuffleLZ4 # available compressors in pyimariswriter header
+		elif self.compression = 'none'
+			self.compression = PW.eCompressionAlgorithmNone # available compressors in pyimariswriter header
 
 		image_size=PW.ImageSize(x=self.cam_x, y=self.cam_y, z=self.n_frames, c=1, t=1) # TODO add channels, hard coded as 1 now
 		dimension_sequence=PW.DimensionSequence('x', 'y', 'z', 'c', 't')
@@ -51,7 +57,7 @@ class DataWriter(object):
 
 		callback_class=MyCallbackClass()
 		self.converter=(PW.ImageConverter(self.datatype, image_size, sample_size, dimension_sequence, block_size,
-								output_filename, options, application_name, application_version, callback_class))
+								self.filename + '.ims', options, application_name, application_version, callback_class))
 
 	def write_block(self, data, chunk_num):
 		self.thread = threading.Thread(target=self._write_block, args=(numpy.transpose(data,(2,1,0)), chunk_num,))

@@ -8,6 +8,7 @@ def main():
     
     gui = UserInterface()
     gui._set_viewer(viewer)
+    gui._startup()
 
     worker_live = gui._acquire_live()
     worker_live.yielded.connect(gui._update_display)
@@ -17,7 +18,7 @@ def main():
     worker_record.yielded.connect(gui._update_display)
     gui._set_worker_record(worker_record)
 
-    viewer.window.add_dock_widget(gui, area='right', name='Control')
+    viewer.window.add_dock_widget(gui, area='right', name='Settings')
     napari.run(max_loop_level=2)
 
     worker_live.quit()

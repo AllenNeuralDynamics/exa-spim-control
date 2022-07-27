@@ -5,19 +5,20 @@ class Camera(object):
 
 	def __init__(self):
 
-		# TODO add these params into config
-		self.n_frames = 4000 # frames
-		self.cam_x = 14192 # pixels
-		self.cam_y = 10640 # pixels
-		self.ram_buffer = 8 # frames
-		self.frame_rate = 4.0 # frames/sec
-		self.dwell_time = 5000.0 # us
-		self.digital_gain = 1 #
-		self.timeout = 2000 # ms
 		self.gentl = EGenTL() # instantiate egentl
 		self.grabber = EGrabber(self.gentl) # instantiate egrabber
 
-	def configure(self):
+	def configure(self, cfg):
+
+		self.cfg = cfg
+		self.n_frames = self.cfg.n_frames
+		self.cam_x = self.cfg.cam_x
+		self.cam_y = self.cfg.cam_y
+		self.ram_buffer = self.cfg.ram_buffer
+		self.frame_rate = self.cfg.frame_rate
+		self.dwell_time = self.cfg.dwell_time
+		self.digital_gain = self.cfg.digital_gain
+		self.timeout = self.cfg.timeout
 
 		self.grabber.realloc_buffers(self.ram_buffer) # allocate RAM buffer N frames
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
@@ -27,13 +28,16 @@ class Camera(object):
 			self.grabber.remote.set("TriggerMode", "On") 
 		self.grabber.remote.set("Gain", self.digital_gain) # set digital gain to 1
 
-	def start(self):
+	def start(self, live = False):
 
-		self.grabber.start(self.n_frames)
+		if live == False:
+			self.grabber.start(self.n_frames)
+		else:
+			self.grabber.start()
 
 	def grab_frame(self):
 
-		buffer = Buffer(self.grabber, timeout = self.timeout)
+		buffer = Buffer(self.grabber, timeout = 2*self.dwell_time)
 		ptr = buffer.get_info(BUFFER_INFO_BASE, INFO_DATATYPE_PTR) # grab pointer to new frame
 		data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cam_x*self.cam_y*2)).contents # grab frame data
 		image = numpy.frombuffer(data, count=int(self.cam_x*self.cam_y), dtype=numpy.uint16).reshape((self.cam_y,self.cam_x)) # cast data to numpy array of correct size/datatype, push to numpy buffer

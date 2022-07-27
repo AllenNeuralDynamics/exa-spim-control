@@ -8,42 +8,41 @@ class WaveformGenerator(object):
 
 	def __init__(self):
 
-		self.n_frames = 4000 # number of frames
-		self.devName = 'Dev1' 	# NI card address, i.e. Dev2
-		self.rate = 1e4 	# NI sampling rate, i.e. 1e3
-		self.period = 210/1000 # frame time period
-		self.ao_names_to_channels = ao_channels =   {'etl': 0, # TODO. use the lookup table of channel names to abstract away how they map to numbered AO channels
-													 'camera': 1,
-													 'stage': 2,
-													 'laser': 3
-													}
-		self.num_channels = len(self.ao_names_to_channels)
-
-		self.rate = 1e4
-		self.etl_amplitude = 0.35/2.0 # volts
-		self.etl_offset = 2.155 + self.etl_amplitude # volts
-		self.camera_exposure_time = 15/1000*10640/1000 # sec
-		self.camera_delay_time = 6.5/1000 # sec
-		self.etl_buffer_time = 25.0/1000 # sec
-		self.laser_buffer_time = 5.0/1000 # sec
-		self.rest_time = 25.4/1000 # sec
-		self.line_time = 5.0/1000 # sec
-		self.pulse_time = 10.0/1000 # sec
-		self.total_time = self.camera_exposure_time + self.etl_buffer_time + self.rest_time
-
 		self.co_task = None
 		self.ao_task = None
 
-	def configure(self):
+	def configure(self, cfg, live = False):
+
+		self.n_frames = self.cfg.n_frames
+		self.dev_name = self.cfg.dev_name
+		self.rate = self.cfg.rate
+		self.period = self.cfg.period
+		self.ao_names_to_channels = self.cfg.ao_names_to_channels
+		self.num_channels = len(self.ao_names_to_channels)
+		self.etl_amplitude = self.cfg.etl_amplitude
+		self.etl_offset = self.cfg.etl_offset
+		self.camera_exposure_time = self.cfg.camera_exposure_time
+		self.camera_delay_time = self.cfg.camera_delay_time
+		self.etl_buffer_time = self.cfg.etl_buffer_time
+		self.laser_buffer_time = self.cfg.laser_buffer_time
+		self.rest_time = self.cfg.rest_time
+		self.line_time = self.cfg.dwell_time
+		self.pulse_time = self.cfg.pulse_time
+		self.total_time = self.camera_exposure_time + self.etl_buffer_time + self.rest_time
 
 		self.co_task = nidaqmx.Task('counter_output_task')
 		self.co_task.co_channels.add_co_pulse_chan_freq('/Dev1/ctr0', units = nidaqmx.constants.FrequencyUnits.HZ, idle_state = nidaqmx.constants.Level.LOW,  initial_delay = 0.0, freq = 1.0/self.period, duty_cycle = 0.5)
-		self.co_task.timing.cfg_implicit_timing(sample_mode = nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan = self.n_frames)
+		
+		if live == False:
+			self.co_task.timing.cfg_implicit_timing(sample_mode = nidaqmx.constants.AcquisitionType.FINITE, samps_per_chan = self.n_frames)
+		else:
+			self.co_task.timing.cfg_implicit_timing(sample_mode = nidaqmx.constants.AcquisitionType.CONTINUOUS)
+
 		self.co_task.co_pulse_term = '/Dev1/PFI0'
 
 		self.ao_task = nidaqmx.Task("analog_output_task")
 		for channel_name, channel_index in self.ao_names_to_channels.items():
-			physical_name = f"/{self.devName}/ao{channel_index}"
+			physical_name = f"/{self.dev_name}/ao{channel_index}"
 			self.ao_task.ao_channels.add_ao_voltage_chan(physical_name)
 		self.ao_task.timing.cfg_samp_clk_timing(rate=self.rate,
 												active_edge=nidaqmx.constants.Edge.RISING,
@@ -52,7 +51,7 @@ class WaveformGenerator(object):
 		self.ao_task.triggers.start_trigger.retriggerable = True
 		self.ao_task.triggers.start_trigger.cfg_dig_edge_start_trig(trigger_source = '/Dev1/PFI1', trigger_edge = nidaqmx.constants.Slope.RISING)
 
-	def generate_waveforms(self):
+	def generate_waveforms(self, live = False):
 
 		# Create samples arrays for various relevant timings
 		camera_exposure_samples = int(self.rate*self.camera_exposure_time)
@@ -78,10 +77,13 @@ class WaveformGenerator(object):
 		voltages_t[1, int(etl_buffer_samples/2.0)+camera_delay_samples:int(etl_buffer_samples/2.0) + camera_delay_samples + pulse_samples] = 5.0
 
 		# Generate stage TTL signal
-		voltages_t[2, camera_exposure_samples + etl_buffer_samples + line_time_samples:camera_exposure_samples + etl_buffer_samples + line_time_samples + pulse_samples] = 5.0
+		if live == False:
+			voltages_t[2, camera_exposure_samples + etl_buffer_samples + line_time_samples:camera_exposure_samples + etl_buffer_samples + line_time_samples + pulse_samples] = 5.0
+		else:
+			voltages_t[2, camera_exposure_samples + etl_buffer_samples + line_time_samples:camera_exposure_samples + etl_buffer_samples + line_time_samples + pulse_samples] = 0.0
 
 		# Generate laser TTL signal
-		voltages_t[3, int(etl_buffer_samples/2.0)-laser_buffer_samples:int(etl_buffer_samples/2.0) + camera_exposure_samples + line_time_samples] = 5.0
+		voltages_t[3, int(etl_buffer_samples/2.0)-laser_buffer_samples:int(etl_buffer_samples/2.0) + camera_exposure_samples + line_time_samples] = 0.0
 
 		# Total waveform time in sec
 		t = numpy.linspace(0, self.total_time, total_samples, endpoint = False)

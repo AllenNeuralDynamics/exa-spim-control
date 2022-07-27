@@ -5,15 +5,16 @@ import time
 
 class DataLogger(object):
 
-	def __init__(self):
+	def configure(self, cfg):
 
-		# TODO add these params into config
-		self.memento_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
-		self.source_path = 'D:\\'
-		self.destination_path = 'X:\\'
+		self.cfg = cfg
+		self.memento_path = self.cfg.memento_path
+		self.filename = self.cfg.filename
+		self.source_path = self.cfg.source_path
+		self.destination_path = self.cfg.destination_path
 
 	def start(self, file):
-		self.file = file
+
 		self.cmd = subprocess.Popen(self.memento_path + " dump --output=" + self.source_path + "\\dump.memento --follow")
 		time.sleep(1) # takes time for memento to boot sometimes
 
@@ -25,4 +26,4 @@ class DataLogger(object):
 	def close(self):
 
 		fname = glob.glob(self.source_path + 'dum*.memento')
-		os.rename(fname[0], self.source_path + self.file)
+		os.rename(fname[0], self.source_path + self.filename + '.memento')

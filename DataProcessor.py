@@ -5,13 +5,10 @@ from multiprocessing.pool import ThreadPool
 
 class DataProcessor(object):
 
-	def __init__(self):
+	def configure(self, cfg):
 
-		# TODO add these params into config
-		self.processes = 1
-
-	def configure(self):
-		self.pool = ThreadPool(processes=self.processes)
+		self.cfg = cfg
+		self.pool = ThreadPool(processes=1)
 
 	def max_project(self, image):
 
@@ -27,10 +24,5 @@ class DataProcessor(object):
 		self.pool.join()
 
 	def _max_project(self, image):
-		"""
-		Max project image
-		:param values: image
-			image array to max project
-		:return max projected image
-		"""
+
 		return numpy.ndarray.max(image, axis=0)

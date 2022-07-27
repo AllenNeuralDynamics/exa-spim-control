@@ -4,13 +4,12 @@ import glob
 
 class FileTransfer(object):
 
-	def __init__(self):
+	def configure(self, cfg):
 
-		# TODO add these params into config
-		self.ftp = 'xcopy'
-		self.ftp_flags = '/j /i'
-		self.source_path = 'D:\\'
-		self.destination_path = 'X:\\'
+		self.ftp = self.cfg.ftp
+		self.ftp_flags = self.cfg.ftp_flags
+		self.source_path = self.cfg.source_path
+		self.destination_path = self.cfg.destination_path
 
 	def start(self, files):
 
