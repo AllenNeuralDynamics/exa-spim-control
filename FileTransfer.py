@@ -6,6 +6,7 @@ class FileTransfer(object):
 
 	def configure(self, cfg):
 
+		self.cfg = cfg
 		self.ftp = self.cfg.ftp
 		self.ftp_flags = self.cfg.ftp_flags
 		self.source_path = self.cfg.source_path

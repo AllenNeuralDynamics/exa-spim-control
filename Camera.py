@@ -18,12 +18,11 @@ class Camera(object):
 		self.frame_rate = self.cfg.frame_rate
 		self.dwell_time = self.cfg.dwell_time
 		self.digital_gain = self.cfg.digital_gain
-		self.timeout = self.cfg.timeout
 
 		self.grabber.realloc_buffers(self.ram_buffer) # allocate RAM buffer N frames
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
 		self.grabber.remote.set("AcquisitionFrameRate", self.frame_rate) # set camera exposure fps
-		self.grabber.remote.set("ExposureTime", self.dwell_time) # set exposure time us, i.e. slit width
+		self.grabber.remote.set("ExposureTime", self.dwell_time*1000) # set exposure time us, i.e. slit width
 		if self.grabber.remote.get("TriggerMode") != "On": # set camera to external trigger mode
 			self.grabber.remote.set("TriggerMode", "On") 
 		self.grabber.remote.set("Gain", self.digital_gain) # set digital gain to 1
@@ -37,7 +36,7 @@ class Camera(object):
 
 	def grab_frame(self):
 
-		buffer = Buffer(self.grabber, timeout = 2*self.dwell_time)
+		buffer = Buffer(self.grabber, timeout = int(2*self.dwell_time*1000))
 		ptr = buffer.get_info(BUFFER_INFO_BASE, INFO_DATATYPE_PTR) # grab pointer to new frame
 		data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cam_x*self.cam_y*2)).contents # grab frame data
 		image = numpy.frombuffer(data, count=int(self.cam_x*self.cam_y), dtype=numpy.uint16).reshape((self.cam_y,self.cam_x)) # cast data to numpy array of correct size/datatype, push to numpy buffer
