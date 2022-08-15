@@ -7,6 +7,7 @@ def main():
     viewer.theme = 'dark'
     
     gui = UserInterface()
+
     gui._set_viewer(viewer)
 
     worker_live = gui._acquire_live()
@@ -18,6 +19,7 @@ def main():
     gui._set_worker_record(worker_record)
 
     viewer.window.add_dock_widget(gui, area='right', name='Control')
+
     napari.run(max_loop_level=2)
 
     worker_live.quit()

@@ -14,36 +14,38 @@ import DataWriter
 import DataProcessor
 import FileTransfer
 import DataLogger
-import thorlabs_apt as RotationStage
+# import thorlabs_apt as RotationStage
 import numpy
 from tifffile import imwrite
 from magicclass import magicclass, set_design, MagicTemplate
-from magicgui import magicgui, widgets
+from magicgui import magicgui, widgets, FunctionGui
 from napari.qt.threading import thread_worker
 from skimage.transform import downscale_local_mean
+from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
+from math import ceil
 
 @magicclass(labels=False)
 class UserInterface(MagicTemplate):
 
-    # initialize
     def __init__(self):
         
         self.cfg = config.config()
-        self._initialize_hardware()
-        if not os.path.exists(self.cfg.source_path):
-            os.makedirs(self.cfg.source_path)
-        if not os.path.exists(self.cfg.destination_path):
-            os.makedirs(self.cfg.destination_path)        
+        self._initialize_hardware()   
 
     def _initialize_hardware(self):
 
         self.camera = Camera.Camera()
         self.waveform_generator = WaveformGenerator.WaveformGenerator()
-        self.data_writer = DataWriter.DataWriter()
-        self.data_processor = DataProcessor.DataProcessor()
+        self.data_writer = {}
+        self.data_processor = {}
+        self.file_transfer = {}
+        for ch in self.cfg.channels:
+            self.data_writer[ch] = DataWriter.DataWriter()
+            self.data_processor[ch] = DataProcessor.DataProcessor()
         self.file_transfer = FileTransfer.FileTransfer()
         self.data_logger = DataLogger.DataLogger()
         # self.rotation_stage = RotationStage.Motor(55271274)
+        # self.xyz_stage = TigerController('COM3')
 
     def _configure_hardware(self, live):
 
@@ -63,240 +65,215 @@ class UserInterface(MagicTemplate):
         self.waveform_generator.close()
 
     def _update_fps(self, fps):
-        """Update fps."""
+
         self.viewer.text_overlay.text = f"{fps:1.1f} FPS"
 
-    # set viewer
     def _set_viewer(self, viewer):
-        """
-        Set Napari viewer
-        :param viewer: Viewer
-            Napari viewer
-        :return None:
-        """
 
         self.viewer=viewer
         self.viewer.text_overlay.visible = True
         self.viewer.window.qt_viewer.canvas.measure_fps(callback=self._update_fps)       
         self.viewer.scale_bar.visible = True
         self.viewer.scale_bar.unit = "um"
-        self.cmaps=['gray', 'green', 'magenta', 'cyan', 'yellow', 'red', 'blue']
+        self.cmaps=     {   
+                            '405': 'gray',
+                            '488': 'green',
+                            '561': 'cyan',
+                            '638': 'magenta'
+                        }
 
-    # set live_display acquistion thread worker
     def _set_worker_live(self, worker_live):
-        """
-        Set worker for live live_display display
-        :param worker_live_display: thread_worker
-            Napari thread worker
-        :return None:
-        """
 
         self.worker_live=worker_live
         self.worker_live_started=False
         self.worker_live_running=False
 
-    # set h5 record thread worker
     def _set_worker_record(self, worker_record):
-        """
-        Set h5 worker for record
-        :param worker_record: thread_worker
-            h5 record thread worker
-        :return None:
-        """
 
         self.worker_record=worker_record
         self.worker_record_started=False
         self.worker_record_running=False
 
-    def _update_display(self, image):
+    def _reset_display(self):
 
-        image = self._display_preprocess(image)
+        self.viewer.layers.clear()
 
-        # pyramid = []
-        # resolutions = [1, 2, 4, 8, 16]
-        # for downscale in resolutions:
-        #     images = images[0::2, 0::2]
-        #     pyramid.append(images)
+    def _update_display(self, values):
 
-        try:
-            self.viewer.layers['Camera']._slice.image._view=image
-            self.viewer.layers['Camera'].events.set_data()
-        except:
-            self.viewer.add_image(image, name='Camera', blending='additive', colormap=self.cmaps[0], scale=(self.cfg.scale_x, self.cfg.scale_y))
+        channels = values[0]
+        images = values[1]
 
-        # self.viewer.layers['Camera'].contrast_limits=(0, 200)
+        for ch in channels:
 
-        if self.cfg.autoscale == True:
-            self.viewer.layers['Camera'].contrast_limits=(0, numpy.amax(image))
+            pyramid = []
+            resolutions = [1, 2, 4, 8, 16]
+            for downscale in resolutions:
+                pyramid.append(images[ch][0::downscale, 0::downscale])
 
-    def _display_preprocess(self, image):
+            try:
+                self.viewer.layers[ch].data = pyramid
+            except:
+                self.viewer.add_image(pyramid, name=ch, blending='additive', colormap=self.cmaps[ch], scale=(self.cfg.scale_x, self.cfg.scale_y))
 
-        if self.cfg.method == 'Downscale mean':
-            image = downscale_local_mean(image, (8,8))
-
-        if self.cfg.method == 'Decimate':
-            image = image[0::8, 0::8]
-
-        if self.cfg.method == 'Downscale max':
-            N = 3
-            for i in range(0,N):
-                temp = numpy.zeros((4, int(image.shape[0]/2), int(image.shape[1]/2)), dtype = self.cfg.datatype)
-                temp[0] = image[0::2,0::2]
-                temp[1] = image[1::2,0::2]
-                temp[2] = image[0::2,1::2]
-                temp[3] = image[1::2,1::2]
-                image = numpy.amax(temp, axis = 0, keepdims = False)
-
-        if self.cfg.method == 'Decimate mean':
-            N = 3
-            for i in range(0,N):
-                image = 0.25*(image[0::2,0::2]+image[1::2,0::2]+image[0::2,1::2]+image[1::2,1::2]).astype(self.cfg.datatype)
-
-        if self.cfg.method == 'Corners':
-            width = 591
-            height = 443
-            border = 10
-            temp = numpy.zeros((3*height,3*width), dtype = self.cfg.datatype)
-            temp[0:height,0:width] = image[0:height,0:width]
-            temp[height:2*height,0:width] = image[int(self.cfg.cam_y/2-height/2):int(self.cfg.cam_y/2+height/2),0:width]
-            temp[2*height:3*height,0:width] = image[self.cfg.cam_y-height:self.cfg.cam_y,0:width]
-            temp[0:height,width:2*width] = image[0:height,int(self.cfg.cam_x/2-width/2):int(self.cfg.cam_x/2+width/2)]
-            temp[height:2*height,width:2*width] = image[int(self.cfg.cam_y/2-height/2):int(self.cfg.cam_y/2+height/2),int(self.cfg.cam_x/2-width/2):int(self.cfg.cam_x/2+width/2)]
-            temp[2*height:3*height,width:2*width] = image[self.cfg.cam_y-height:self.cfg.cam_y,int(self.cfg.cam_x/2-width/2):int(self.cfg.cam_x/2+width/2)]
-            temp[0:height,2*width:3*width] = image[0:height,self.cfg.cam_x-width:self.cfg.cam_x]
-            temp[height:2*height,2*width:3*width] = image[int(self.cfg.cam_y/2-height/2):int(self.cfg.cam_y/2+height/2),self.cfg.cam_x-width:self.cfg.cam_x]
-            temp[2*height:3*height,2*width:3*width] = image[self.cfg.cam_y-height:self.cfg.cam_y,self.cfg.cam_x-width:self.cfg.cam_x]
-            temp[height-border:height,:] = 0
-            temp[2*height:2*height+border,:] = 0
-            temp[:,width-border:width] = 0
-            temp[:,2*width:2*width+border] = 0
-            image = temp
-
-        if self.cfg.method == 'Center':
-            height = 1330
-            width = 1774
-            image = image[int(self.cfg.cam_y/2-height/2):int(self.cfg.cam_y/2+height/2), int(self.cfg.cam_x/2-width/2):int(self.cfg.cam_x/2+width/2)]
-
-        if self.cfg.method == 'ASLM':
-            image = image[0::8, 7096-887:7096+887]
-
-        if self.cfg.method == 'Full':
-            image = image
-
-        return image
+            if self.cfg.autoscale == True:
+                self.viewer.layers[ch].contrast_limits=(0, numpy.amax(image))
 
     @thread_worker
     def _acquire_live(self):
 
+        images = {}
+
         while True:
-            image = self.camera.grab_frame()
-            yield image
+            for ch in self.cfg.channels:
+                images[ch] = self.camera.grab_frame()
+            yield self.cfg.channels, images
 
     @thread_worker
     def _acquire_record(self):
 
-        for x_tile in range(0, self.cfg.x_tiles):
+        if not os.path.exists(self.cfg.source_path):
+            os.makedirs(self.cfg.source_path)
+        if not os.path.exists(self.cfg.destination_path):
+            os.makedirs(self.cfg.destination_path)  
+
+        print('y step: ' + str(self.cfg.y_grid_step_um))
+        print('z step: ' + str(self.cfg.z_grid_step_um))
+
+        print('z tiles ' + str(self.cfg.z_tiles))
+        print('y tiles ' + str(self.cfg.y_tiles))
+
+        stage_x_pos, stage_y_pos, stage_z_pos = (0, 0, 0)
+        # self.xyz_stage.set_axis_backlash(x=0.0)
+
+        for z_tile in range(0, self.cfg.z_tiles):
+
+            # self.xyz_stage.move_axes_absolute(z=round(stage_z_pos))
+
+            stage_y_pos = 0
 
             for y_tile in range(0, self.cfg.y_tiles):
 
-                for ch in range(0, self.cfg.n_channels):
+                tile_name = {}
+                for ch in self.cfg.channels:
+                    tile_name[ch] = ('tile_x_{:0>4d}_y_{:0>4d}_z_{:0>4d}_ch_' + str(ch)).format(y_tile, z_tile, 0)
 
-                    tile_num = ch + y_tile*self.cfg.n_channels + self.cfg.n_channels*self.cfg.y_tiles*x_tile
+                tile_num = y_tile*self.cfg.n_channels + self.cfg.n_channels*self.cfg.y_tiles*z_tile
 
-                    print(tile_num)
+                # self.xyz_stage.move_axes_absolute(y=round(stage_y_pos))
 
-                    tile_name = 'tile_x_{:0>4d}_y_{:0>4d}_z_{:0>4d}_ch_{:0>4d}'.format(x_tile, y_tile, 0, ch)
+                stage_x_pos = 0
 
-                    print(x_tile*self.cfg.cam_x*self.cfg.pixel_x*(1-self.cfg.x_overlap/100))
-                    print(y_tile*self.cfg.cam_y*self.cfg.pixel_y*(1-self.cfg.y_overlap/100))
+                print('y_tile: ' + str(y_tile))
+                print('z_tile: ' + str(z_tile))
+                print('x: ' + str(stage_x_pos))
+                print('y: ' + str(stage_y_pos))
+                print('z: ' + str(stage_z_pos))
 
-                    images = numpy.zeros((self.cfg.chunk_size,self.cfg.cam_y,self.cfg.cam_x), dtype=self.cfg.datatype)
-                    mip = numpy.zeros((self.cfg.cam_y,self.cfg.cam_x), dtype=self.cfg.datatype)
+                # self.xyz_stage.set_axis_backlash(x=1.0)
+                # self.xyz_stage.move_axes_absolute(x=round(stage_x_pos))
 
-                    frame_num = 0
-                    buffer_frame_num = 0
-                    chunk_num = 0
+                # while self.xyz_stage.is_moving():
+                #     # print('waiting')
+                #     time.sleep(0.1)
+                #     pass
 
-                    self._configure_hardware(live = False)
+                self._configure_hardware(live = False)
 
-                    self.data_writer.configure(self.cfg, tile_name)
-                    self.data_processor.configure(self.cfg)
-                    self.data_logger.configure(self.cfg, tile_name)
-                    self.file_transfer.configure(self.cfg)
+                images = {}
+                mip = {}
+                for ch in self.cfg.channels:
+                    images[ch] = numpy.zeros((self.cfg.chunk_size, self.cfg.cam_y,self.cfg.cam_x), dtype=self.cfg.datatype)
+                    mip[ch] = numpy.zeros((self.cfg.cam_y,self.cfg.cam_x), dtype=self.cfg.datatype)
+                    self.data_writer[ch].configure(self.cfg, tile_name[ch])
+                    self.data_processor[ch].configure(self.cfg)
+
+                self.file_transfer.configure(self.cfg)
+                self.data_logger.configure(self.cfg, tile_name['488'])
+
+                frame_num = 0
+                buffer_frame_num = 0
+                chunk_num = 0
+
+                try:
+
+                    start_time = time.time()
 
                     self.data_logger.start()
 
-                    try:
+                    self.camera.start(live = False)
 
-                        start_time = time.time()
+                    while frame_num < self.cfg.n_frames:
 
-                        self.camera.start(live = False)
+                        if frame_num == 0:
+                            self.waveform_generator.start()
 
-                        while frame_num < self.cfg.n_frames:
-
-                            if frame_num == 0:
-                                self.waveform_generator.start()
-
+                        for ch in self.cfg.channels:
                             image = self.camera.grab_frame()
-                            images[buffer_frame_num] = image
-                            frame_num += 1
-                            buffer_frame_num += 1
+                            images[ch][buffer_frame_num] = image
+                            self.camera.print_statistics(ch)
 
-                            # self.camera.print_statistics()
+                        frame_num += 1
+                        buffer_frame_num += 1
 
-                            if buffer_frame_num % self.cfg.chunk_size == 0:
-                                self.data_writer.write_block(images, chunk_num)
+                        if buffer_frame_num % self.cfg.chunk_size == 0:
+
+                            for ch in self.cfg.channels:
+                                self.data_writer[ch].write_block(images[ch], chunk_num)
                                 if frame_num > self.cfg.chunk_size:
-                                    mip = self.data_processor.update_max_project(mip)
-                                self.data_processor.max_project(images)
-                                buffer_frame_num = 0
-                                chunk_num += 1
+                                    mip[ch] = self.data_processor[ch].update_max_project(mip[ch])
+                                self.data_processor[ch].max_project(images[ch])
 
-                            elif frame_num == self.cfg.n_frames:
-                                self.data_writer.write_block(images, chunk_num)
-                                self.data_processor.max_project(images)
-                                mip = self.data_processor.update_max_project(mip)  
+                            buffer_frame_num = 0
+                            chunk_num += 1
 
-                    finally:
+                        elif frame_num == self.cfg.n_frames:
 
-                        yield mip
+                            for ch in self.cfg.channels:
+                                self.data_writer[ch].write_block(images[ch], chunk_num)
+                                self.data_processor[ch].max_project(images[ch])
+                                mip[ch] = self.data_processor[ch].update_max_project(mip[ch])
 
-                        self.waveform_generator.stop()
-                        self.camera.stop()
-                        self.data_logger.stop()
+                finally:
 
-                        self.waveform_generator.close()
-                        self.data_writer.close(x_tile, y_tile)
-                        self.data_processor.close()
-                        self.data_logger.close()
+                    yield self.cfg.channels, mip
 
-                        print('imaging time: ' + str((time.time()-start_time)/3600))
+                    self.waveform_generator.stop()
+                    self.camera.stop()
+                    self.data_logger.stop()
 
-                        imwrite(self.cfg.source_path + tile_name + '_mip.tiff', mip) # TODO put this somewhere else. save mip tiff image
+                    self.waveform_generator.close()
+                    self.data_logger.close()
 
-                        start_time = time.time()
+                    for ch in self.cfg.channels:
+                        self.data_writer[ch].close(ch, y_tile, z_tile)
+                        self.data_processor[ch].close()
 
-                        if tile_num > 0:
-                            wait_start = time.time()
-                            self.file_transfer.wait()
-                            self.file_transfer.close()
-                            os.remove(self.cfg.source_path + previous_tile_name + '.ims')
-                            os.remove(self.cfg.source_path + previous_tile_name + '.memento')
-                            os.remove(self.cfg.source_path + previous_tile_name + '_mip.tiff')
-                            print('wait time: ' + str((time.time() - wait_start)/3600))
+                    print('imaging time: ' + str((time.time()-start_time)/3600))
 
-                        self.file_transfer.start([tile_name + '.memento', tile_name + '_mip.tiff', tile_name + '.ims'])
+                    for ch in self.cfg.channels:
+                        imwrite(self.cfg.source_path + tile_name[ch] + '_mip.tiff', mip[ch])
 
-                        if tile_num == self.cfg.x_tiles*self.cfg.y_tiles*self.cfg.n_channels-1:
-                            wait_start = time.time()
-                            self.file_transfer.wait()
-                            self.file_transfer.close()
-                            os.remove(self.cfg.source_path + tile_name +  '.ims')
-                            os.remove(self.cfg.source_path + tile_name + '.memento')
-                            os.remove(self.cfg.source_path + tile_name + '_mip.tiff')
-                            print('wait time: ' + str((time.time() - wait_start)/3600))
+                    if tile_num > 0:
+                        self.file_transfer.wait()
+                        self.file_transfer.close()
+                        for ch in self.cfg.channels:
+                            os.remove(self.cfg.source_path + previous_tile_name[ch] + '.ims')
+                            os.remove(self.cfg.source_path + previous_tile_name[ch] + '_mip.tiff')
 
-                        previous_tile_name = tile_name
+                    self.file_transfer.start('tile_x_{:0>4d}_y_{:0>4d}_z_{:0>4d}'.format(y_tile, z_tile, 0))
+
+                    if tile_num == self.cfg.z_tiles*self.cfg.y_tiles-1:
+                        self.file_transfer.wait()
+                        self.file_transfer.close()
+                        for ch in self.cfg.channels:
+                            os.remove(self.cfg.source_path + tile_name[ch] +  '.ims')
+                            os.remove(self.cfg.source_path + tile_name[ch] + '_mip.tiff')
+
+                    previous_tile_name = tile_name
+
+                stage_y_pos += self.cfg.y_grid_step_um * UM_TO_STEPS
+
+            stage_z_pos += self.cfg.z_grid_step_um * UM_TO_STEPS
 
     @magicgui(
         auto_call=True,
@@ -308,18 +285,22 @@ class UserInterface(MagicTemplate):
         if self.worker_live_running:
             self.worker_live.pause()
             self.worker_live_running=False
-            time.sleep(1.1*(self.cfg.total_time/1000.0))
+            time.sleep(0.5)
             self._stop_hardware()
         else:
             if not(self.worker_live_started):
+                self._reset_display()
                 self._configure_hardware(live = True)
-                self._start_hardware(live = True)
+                self.camera.start()
+                self.waveform_generator.start()
                 self.worker_live.start()
                 self.worker_live_started=True
                 self.worker_live_running=True
             else:
+                self._reset_display()
                 self._configure_hardware(live = True)
-                self._start_hardware()
+                self.camera.start()
+                self.waveform_generator.start()
                 self.worker_live.resume()
                 self.worker_live_running=True
 
@@ -334,6 +315,7 @@ class UserInterface(MagicTemplate):
             print('acquisition in progress')
         else:
             if not(self.worker_record_started):
+                self._reset_display()
                 self.worker_record_started=True
                 self.worker_record_running=True
                 self.worker_record.start()
@@ -356,56 +338,57 @@ class UserInterface(MagicTemplate):
         rest_time={"widget_type": "FloatSpinBox", "min": 0, "max": 1000, "step": 0.001, "label": 'Stage settling time (ms)'},
         layout='vertical',
     )
-    def set_waveform_param(self, etl_amplitude = config.config().etl_amplitude, etl_offset = config.config().etl_offset, etl_nonlinear = config.config().etl_nonlinear, etl_interp_time = config.config().etl_interp_time, camera_delay_time = config.config().camera_delay_time, etl_buffer_time = config.config().etl_buffer_time, laser_buffer_time = config.config().laser_buffer_time, rest_time = config.config().rest_time):
+    def set_waveform_param(self, etl_amplitude = config.config().etl_amplitude['488'], etl_offset = config.config().etl_offset['488'], etl_nonlinear = config.config().etl_nonlinear['488'], etl_interp_time = config.config().etl_interp_time['488'], camera_delay_time = config.config().camera_delay_time['488'], etl_buffer_time = config.config().etl_buffer_time['488'], laser_buffer_time = config.config().laser_buffer_time['488'], rest_time = config.config().rest_time):
 
-        self.cfg.etl_amplitude = etl_amplitude
-        self.cfg.etl_offset = etl_offset
-        self.cfg.etl_nonlinear = etl_nonlinear
-        self.cfg.etl_interp_time = etl_interp_time
-        self.cfg.camera_delay_time = camera_delay_time
-        self.cfg.etl_buffer_time = etl_buffer_time
-        self.cfg.laser_buffer_time = laser_buffer_time
-        self.cfg.rest_time = rest_time
+        self.cfg.etl_amplitude['488'] = etl_amplitude
+        self.cfg.etl_offset['488'] = etl_offset
+        self.cfg.etl_nonlinear['488'] = etl_nonlinear
+        self.cfg.etl_interp_time['488'] = etl_interp_time
+        self.cfg.camera_delay_time['488'] = camera_delay_time
+        self.cfg.etl_buffer_time['488'] = etl_buffer_time
+        self.cfg.laser_buffer_time['488'] = laser_buffer_time
+        self.cfg.rest_time['488'] = rest_time
 
         if self.worker_live_running:
-            # self.worker_live.pause()
-            # self.worker_live_running=False
-            # time.sleep(1.1*(self.cfg.total_time/1000.0))
+            self.worker_live.pause()
+            self.worker_live_running=False
+            time.sleep(0.5)
             self.waveform_generator.stop()
             self.waveform_generator.close()
             self.waveform_generator.configure(self.cfg, live = True)
             self.waveform_generator.generate_waveforms(self.cfg)
-            self.waveform_generator.start()
-            # self._stop_hardware()
-            # self._configure_hardware(live = True)
-            # self._start_hardware(live = True)
-            # self.worker_live.resume()
-            # self.worker_live_running=True
-
+            self.camera.start()
+            self.waveform_generator.start()            
+            self.worker_live.resume()
+            self._reset_display()
+            self.worker_live_running=True
 
     @magicgui(
         auto_call=True,
-        active_channels = {"widget_type": "Select", "choices": ["Off","405","488","561","638"], "allow_multiple": False, "label": "Active channels"},
+        active_channels = {"widget_type": "Select", "choices": ["405","488","561","638"], "allow_multiple": True, "label": "Active channels"},
         layout='vertical'
     )
     def set_channel_state(self, active_channels):
 
-        # for channel in active_channels:
-        #     if channel == 'Off':
-        #         states = [False,False,False,False]
-        #         break
-        #     if channel == '405':
-        #         states['405']=True
-        #     elif channel == '488':
-        #         states['488']=True
-        #     elif channel == '561':
-        #         states['561']=True
-        #     elif channel == '638':
-        #         states['638']=True
+        channels = []
+        for ch in active_channels:
+            channels.append(ch)
 
-        # self.cfg.channels = channels
+        self.cfg.channels = channels
 
-        pass
+        if self.worker_live_running:
+            self.worker_live.pause()
+            self.worker_live_running=False
+            time.sleep(0.5)
+            self.waveform_generator.stop()
+            self.waveform_generator.close()
+            self.waveform_generator.configure(self.cfg, live = True)
+            self.waveform_generator.generate_waveforms(self.cfg)
+            self.camera.start()
+            self.waveform_generator.start()            
+            self.worker_live.resume()
+            self._reset_display()
+            self.worker_live_running=True
 
     @magicgui(
         auto_call=False,
@@ -428,12 +411,26 @@ class UserInterface(MagicTemplate):
     @magicgui(
         auto_call=False,
         call_button = 'Update',
-        exposure_ms={"widget_type": "FloatSpinBox", "min": 1, "max": 100,"step": 0.01, 'label': 'Camera exposure (ms)'},
+        exposure_ms={"widget_type": "FloatSpinBox", "min": 0, "max": 100,"step": 0.01, 'label': 'Camera exposure (ms)'},
         layout='horizontal',
     )
     def set_exposure(self, exposure_ms = config.config().dwell_time):
 
         self.cfg.dwell_time = exposure_ms
+
+        if self.worker_live_running:
+            self.worker_live.pause()
+            self.worker_live_running=False
+            time.sleep(0.5)
+            self.waveform_generator.stop()
+            self.waveform_generator.close()
+            self.waveform_generator.configure(self.cfg, live = True)
+            self.waveform_generator.generate_waveforms(self.cfg)
+            self.camera.start()
+            self.waveform_generator.start()            
+            self.worker_live.resume()
+            self._reset_display()
+            self.worker_live_running=True
 
     @magicgui(
         auto_call=False,
@@ -441,9 +438,10 @@ class UserInterface(MagicTemplate):
         rotation={"widget_type": "FloatSpinBox", "min": 0, "max": 360,"step": 0.01, 'label': 'Light sheet angle (deg)'},
         layout='horizontal',
     )
-    def set_rotation(self, rotation = 0):
+    def set_rotation(self, rotation = 40.5):
 
-        self.rotation_stage.move_to(rotation)
+        self.cfg.rotation = rotation
+        # self.rotation_stage.move_to(self.cfg.rotation)
 
     @magicgui(
         auto_call=False,
@@ -454,16 +452,3 @@ class UserInterface(MagicTemplate):
     def set_save_path(self, source_path = config.config().source_path):
 
         self.cfg.source_path = source_path
-
-    @magicgui(
-        auto_call=True,
-        Display={"choices": ["Center", "Decimate", "Corners", "Downscale mean", "Decimate mean", "Downscale max", "Full", "ASLM"]},
-        layout='horizontal'
-    )
-    def set_display_method(self, Display = config.config().method):
-
-        self.cfg.method = Display
-        self.viewer.reset_view()
-
-        # print(self.viewer.camera.center)
-        # print(self.viewer.camera.zoom)
