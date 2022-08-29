@@ -25,4 +25,20 @@ pip install -e .
 Note that a fairly recent version of pip (>=21.3) is required.
 
 ## Run
+
+### As Executable
+This method is convenient for launching the code on a PC plumbed with all the necessary hardware (Camera, galvos, etc.).
+A thin prompt-based UI is exposed for interacting with the machine.
+
 With the package installed, you can launch the code from a command prompt by invoking `exaspim`.
+
+TODO: command line arguments.
+
+### As a Package
+This method is convenient for developing GUIs on top of the Exaspim class for interacting with the machine as a production instrument.
+````python
+from exaspim.exaspim import Exaspim
+
+instrument = Exaspim(args)
+instrument.run()
+````
