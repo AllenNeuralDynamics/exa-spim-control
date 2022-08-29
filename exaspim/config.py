@@ -1,9 +1,16 @@
 import datetime
 from math import ceil
+from mesospim.config_base import TomlConfig
 
-class config():
+# A template from which we can define a blank exaspim config.
+# TODO: create this.
+TomlTemplate = {}
 
-    def __init__(self):
+
+class ExaspimConfig(TomlConfig):
+
+    def __init__(self, toml_filepath: str):
+        super().__init__(toml_filepath, TomlTemplate)
 
         # scan settings
         date_time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -16,9 +23,6 @@ class config():
         self.datatype = 'uint16'                                # unit: bits
         self.y_overlap = 15                                     # unit: percent
         self.z_overlap = 15                                     # unit: percent
-        # self.volume_x_um = 12000                              # unit: um
-        # self.volume_y_um = 32000                              # unit: um
-        # self.volume_z_um = 15000                              # unit: um
         self.volume_x_um = 12000                                # unit: um
         self.volume_y_um = 32000                                # unit: um
         self.volume_z_um = 15000                                # unit: um
