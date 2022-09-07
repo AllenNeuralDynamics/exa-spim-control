@@ -1,5 +1,5 @@
 import napari
-from UserInterface import UserInterface
+from .UserInterface import UserInterface
 
 def main():
 

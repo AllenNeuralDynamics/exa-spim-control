@@ -3,6 +3,7 @@
   <component name="ProjectModuleManager">
     <modules>
       <module fileurl="file://$PROJECT_DIR$/.idea/exa-spim-control.iml" filepath="$PROJECT_DIR$/.idea/exa-spim-control.iml" />
+      <module fileurl="file://$PROJECT_DIR$/../mesospim-prime/.idea/mesospim-prime.iml" filepath="$PROJECT_DIR$/../mesospim-prime/.idea/mesospim-prime.iml" />
     </modules>
   </component>
 </project>

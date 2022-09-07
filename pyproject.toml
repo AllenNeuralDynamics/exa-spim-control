@@ -27,8 +27,6 @@ PyImarisWriter = ">=0.7.0"
 thorlabs-apt = ">=0.2"
 pip = ">=21.3"
 tigerasi = "git+ssh://git@github.com/AllenNeuralDynamics/TigerASI@main'"
-obis_laser = "git+ssh://git@github.com/AllenNeuralDynamics/obis-laser@main'"
-opto = "git+ssh://git@github.com/AllenNeuralDynamics/opto@master'"
 mesospim = "git+ssh://git@github.com/AllenNeuralDynamics/mesospim-prime@develop'" # this is temporary.
 napari = "0.4.16"
 nidaqmx = ">=0.6.2"
@@ -38,6 +36,11 @@ tomlkit = ">=0.11.1"
 mock = ">=4.0.3"
 coloredlogs = ">=15.0.1"
 gitPython = ">=3.1.27"
+# extra stuff that can be removed after we remove napari as a dependency.
+magic-class= ">=0.6.9"
+PyQt5= ">=5.15.7"
+PyQt5-Qt5= ">=5.15.2"
+PyQt5-sip= ">=12.11.0"
 
 [build-system]
 requires = ["poetry-core>=1.0.8"]

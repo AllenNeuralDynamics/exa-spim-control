@@ -7,15 +7,15 @@ import os.path
 import traceback
 import time
 import glob
-import config
-import Camera
-import WaveformGenerator
-import DataWriter
-import DataProcessor
-import FileTransfer
-import DataLogger
+from exaspim.devices import Camera
+from exaspim.devices import WaveformGenerator
+from exaspim.processes import DataWriter
+from exaspim.processes import DataProcessor
+from exaspim.processes import FileTransfer
+from exaspim.processes import DataLogger
 # import thorlabs_apt as RotationStage
 import numpy
+from exaspim.config import config
 from tifffile import imwrite
 from magicclass import magicclass, set_design, MagicTemplate
 from magicgui import magicgui, widgets, FunctionGui
@@ -29,7 +29,7 @@ class UserInterface(MagicTemplate):
 
     def __init__(self):
         
-        self.cfg = config.config()
+        self.cfg = config()
         self._initialize_hardware()   
 
     def _initialize_hardware(self):
@@ -338,7 +338,10 @@ class UserInterface(MagicTemplate):
         rest_time={"widget_type": "FloatSpinBox", "min": 0, "max": 1000, "step": 0.001, "label": 'Stage settling time (ms)'},
         layout='vertical',
     )
-    def set_waveform_param(self, etl_amplitude = config.config().etl_amplitude['488'], etl_offset = config.config().etl_offset['488'], etl_nonlinear = config.config().etl_nonlinear['488'], etl_interp_time = config.config().etl_interp_time['488'], camera_delay_time = config.config().camera_delay_time['488'], etl_buffer_time = config.config().etl_buffer_time['488'], laser_buffer_time = config.config().laser_buffer_time['488'], rest_time = config.config().rest_time):
+    def set_waveform_param(self, etl_amplitude=config().etl_amplitude['488'], etl_offset=config().etl_offset['488'],
+                           etl_nonlinear=config().etl_nonlinear['488'], etl_interp_time=config().etl_interp_time['488'],
+                           camera_delay_time=config().camera_delay_time['488'], etl_buffer_time =config().etl_buffer_time['488'],
+                           laser_buffer_time=config().laser_buffer_time['488'], rest_time=config().rest_time):
 
         self.cfg.etl_amplitude['488'] = etl_amplitude
         self.cfg.etl_offset['488'] = etl_offset
@@ -399,7 +402,7 @@ class UserInterface(MagicTemplate):
         power_638={"widget_type": "FloatSpinBox", "min": 0, "max": 100, "step": 0.1, "label": '635nm power (%)'},
         layout='vertical',
     )
-    def set_channel_power(self, power_405 = config.config().channel_powers['405'], power_488 = config.config().channel_powers['488'], power_561 = config.config().channel_powers['561'], power_638 = config.config().channel_powers['638']):
+    def set_channel_power(self, power_405 = config().channel_powers['405'], power_488 = config().channel_powers['488'], power_561 = config().channel_powers['561'], power_638 = config().channel_powers['638']):
 
         channel_powers['405'] = power_405
         channel_powers['488'] = power_488
@@ -414,7 +417,7 @@ class UserInterface(MagicTemplate):
         exposure_ms={"widget_type": "FloatSpinBox", "min": 0, "max": 100,"step": 0.01, 'label': 'Camera exposure (ms)'},
         layout='horizontal',
     )
-    def set_exposure(self, exposure_ms = config.config().dwell_time):
+    def set_exposure(self, exposure_ms=config().dwell_time):
 
         self.cfg.dwell_time = exposure_ms
 
@@ -449,6 +452,6 @@ class UserInterface(MagicTemplate):
         source_path={"widget_type": "FileEdit","mode": "d", "label": 'Local path:'},
         layout='horizontal', 
     )
-    def set_save_path(self, source_path = config.config().source_path):
+    def set_save_path(self, source_path = config().source_path):
 
         self.cfg.source_path = source_path
