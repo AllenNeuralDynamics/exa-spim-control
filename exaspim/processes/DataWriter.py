@@ -1,6 +1,6 @@
 import threading
 import numpy
-from imaris_writer import PyImarisWriter as PW
+from PyImarisWriter import PyImarisWriter as PW
 from datetime import datetime
 
 class MyCallbackClass(PW.CallbackClass):

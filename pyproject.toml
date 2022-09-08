@@ -1,46 +1,49 @@
-[tool.poetry]
+[project]
 name = "exaspim"
 description = "abstraction of the ExaSPIM instrument."
 version = "0.1.0"
 authors = [
-    "adamkglaser <adam.glaser@alleninstitute.org>",
-    "poofjunior <joshua.vasquez@alleninstitute.org>"
-    ]
+    {name = "Adam Glaser", email = "adam.glaser@alleninstitute.org"},
+    {name = "Joshua Vasquez", email = "joshua.vasquez@alleninstitute.org"}
+]
 readme = "README.md"
-license = "MIT"
 keywords = ['microcsope', 'spim']
 classifiers=[
     'License :: OSI Approved :: MIT License',
     'Development Status :: 4 - Beta',
     'Programming Language :: Python'
 ]
-packages = [
-    { include = "exaspim"},
+#packages = [
+#    { include = "exaspim"},
+#]
+
+requires-python = ">=3.6"
+dependencies = [
+    "PyImarisWriter >= 0.7.0",
+    "thorlabs-apt >= 0.2",
+    "tigerasi @ git+ssh://git@github.com/AllenNeuralDynamics/TigerASI.git@main#egg=TigerASI",
+    "mesospim @ git+ssh://git@github.com/AllenNeuralDynamics/mesospim-prime.git@develop#egg=mesospim",
+    "nidaqmx >= 0.6.2",
+    "numpy >= 1.22.3",
+    "matplotlib >= 3.5.2",
+    "tomlkit >= 0.11.1",
+    "mock >= 4.0.3",
+    "coloredlogs >= 15.0.1",
+    "gitPython >= 3.1.27",
+    # extra stuff that can be removed after we remove napari as a dependency.
+    "napari == 0.4.16",
+    "magic-class >= 0.6.9",
+    "PyQt5 >= 5.15.7",
+    "PyQt5-Qt5 >= 5.15.2",
+    "PyQt5-sip >= 12.11.0",
 ]
 
-[tool.poetry.urls]
+[project.urls]
 repository = "https://github.com/AllenNeuralDynamics/exa-spim-control"
 
-[tool.poetry.dependencies]
-python = ">=3.6"
-PyImarisWriter = ">=0.7.0"
-thorlabs-apt = ">=0.2"
-pip = ">=21.3"
-tigerasi = "git+ssh://git@github.com/AllenNeuralDynamics/TigerASI@main'"
-obis_laser = "git+ssh://git@github.com/AllenNeuralDynamics/obis-laser@main'"
-opto = "git+ssh://git@github.com/AllenNeuralDynamics/opto@master'"
-mesospim = "git+ssh://git@github.com/AllenNeuralDynamics/mesospim-prime@develop'" # this is temporary.
-nidaqmx = ">=0.6.2"
-numpy = ">=1.22.3"
-matplotlib = ">=3.5.2"
-tomlkit = ">=0.11.1"
-mock = ">=4.0.3"
-coloredlogs = ">=15.0.1"
-gitPython = ">=3.1.27"
-
 [build-system]
-requires = ["poetry-core>=1.0.8"]
-build-backend = "poetry.core.masonry.api"
+requires = ["flit-core>=3.7.1,<4"]
+build-backend = "flit_core.buildapi"
 
-[tool.poetry.scripts]
+[project.scripts]
 exaspim = "bin.main:main"
