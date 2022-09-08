@@ -1,0 +1,94 @@
+# No repeat values in here!
+[imaging_params]
+local_storage_directory = "."
+external_storage_directory = "."
+subject_id = "sim_test" # Specimin name.
+tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.tiff.
+tile_overlap_x_percent = 15
+tile_overlap_y_percent = 15
+#z_step_size_um = 1 # z spacing between tiles. Defaults to same as x,y spacing if not listed.
+volume_x_um = 2048 # Sample volume x dimension that we want to tile.
+volume_y_um = 2048 # Sample volume y dimension that we want to tile.
+volume_z_um = 100
+laser_wavelengths = [488]
+
+[design_specs]
+slit_width = 120 # pixels
+tile_size_um = 2048 # XY image field of view in [um]. This should not change.
+sensor_row_count = 2048
+
+# Stage
+[sample_stage_specs]
+move_time_um = 0.025 # time it takes the stage to move 1[um] and settle.
+backlash_reset_distance_um = 4 # [um]
+
+# Signals
+[waveform_specs]
+start_of_frame_delay = 950e-6 # seconds. Time between external trigger and first hsync.
+
+# Laser Channels
+[channel_specs.488]
+driver = "Vortran"
+color = "blue"
+filter_index = 2
+ao_channel = 2
+disable_voltage = 0.0
+enable_voltage =  5.0
+camera_axis_position = 1300 # absolute value in steps. (sending: M N=0)
+[channel_specs.488.etl]
+delay = 0.0  # seconds.
+settling_time = 0.025  # seconds.
+min_voltage = 2.37
+max_voltage = 2.96
+[channel_specs.488.gavlo_a]
+setpoint = 0.0
+[channel_specs.488.galvo_b]
+setpoint = 0.0
+[channel_specs.488.kwds]
+port='COMxx'
+
+# Laser Channels
+[channel_specs.561]
+driver = "Vortran" # FIXME. What is this actually?
+color = "green"
+filter_index = 2
+ao_channel = 2
+disable_voltage = 0.0
+enable_voltage =  5.0
+camera_axis_position = 1300 # absolute value in steps. (sending: M N=0)
+[channel_specs.561.etl]
+delay = 0.0  # seconds.
+settling_time = 0.025  # seconds.
+min_voltage = 2.37
+max_voltage = 2.96
+[channel_specs.561.gavlo_a]
+setpoint = 0.0
+[channel_specs.561.galvo_b]
+setpoint = 0.0
+[channel_specs.561.kwds]
+port='COMxx'
+
+
+[daq_ao_names_to_channels] # lookup table for named hardware to AO channels
+etl = 1
+# This will be further populated with the laser ao channels from channel_specs at runtime.
+
+# <SOMETHING>_kwds will be splatted with **kwds to init the corresponding object.
+[daq_driver_kwds]
+dev_name = 'Dev1' # NI Card address as it appears to the PC.
+output_trigger_name = 'port0/line0'
+update_frequency = 4e5 # Hz
+
+[etl_driver_kwds]
+port = 'COM4' # COM7 for ch2, COM4 for ch1
+
+[tiger_controller_driver_kwds]
+com_port='COM10'
+
+[filter_wheel_kwds]
+tiger_axis = 1 # filterwheel axis according to the tigerbox.
+
+# For imaging run estimations.
+[estimates]
+tiles_per_second = 15
+gigabytes_per_image = 0.8
