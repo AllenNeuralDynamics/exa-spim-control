@@ -13,9 +13,14 @@ volume_z_um = 100
 laser_wavelengths = [488]
 
 [design_specs]
-slit_width = 120 # pixels
-tile_size_um = 2048 # XY image field of view in [um]. This should not change.
-sensor_row_count = 2048
+slit_width_pixels = 120 # pixels
+
+[tile_specs]
+x_field_of_view_um = 2048 # X image field of view in [um].
+y_field_of_view_um = 2048 # Y image field of view in [um].
+row_count_pixels = 2048
+column_count_pixels = 2048
+data_type = "uint16"
 
 # Stage
 [sample_stage_specs]
@@ -40,34 +45,17 @@ delay = 0.0  # seconds.
 settling_time = 0.025  # seconds.
 min_voltage = 2.37
 max_voltage = 2.96
+amplitude = 0.171
+offset = 2.422
+nonlinear = -0.007
+interp_time = 0.5
+buffer_time = 0.05
 [channel_specs.488.gavlo_a]
 setpoint = 0.0
 [channel_specs.488.galvo_b]
 setpoint = 0.0
 [channel_specs.488.kwds]
 port='COMxx'
-
-# Laser Channels
-[channel_specs.561]
-driver = "Vortran" # FIXME. What is this actually?
-color = "green"
-filter_index = 2
-ao_channel = 2
-disable_voltage = 0.0
-enable_voltage =  5.0
-camera_axis_position = 1300 # absolute value in steps. (sending: M N=0)
-[channel_specs.561.etl]
-delay = 0.0  # seconds.
-settling_time = 0.025  # seconds.
-min_voltage = 2.37
-max_voltage = 2.96
-[channel_specs.561.gavlo_a]
-setpoint = 0.0
-[channel_specs.561.galvo_b]
-setpoint = 0.0
-[channel_specs.561.kwds]
-port='COMxx'
-
 
 [daq_ao_names_to_channels] # lookup table for named hardware to AO channels
 etl = 1

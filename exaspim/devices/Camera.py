@@ -1,6 +1,7 @@
 import numpy
 from egrabber import *
 
+
 class Camera(object):
 
 	def __init__(self):

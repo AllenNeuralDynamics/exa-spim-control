@@ -1,16 +1,19 @@
 import datetime
 from math import ceil
-from mesospim.config_base import TomlConfig
+from mesospim.config_base import SpimConfig
 
 # A template from which we can define a blank exaspim config.
 # TODO: create this.
 TomlTemplate = {}
 
 
-class ExaspimConfig(TomlConfig):
+class ExaspimConfig(SpimConfig):
 
     def __init__(self, toml_filepath: str):
         super().__init__(toml_filepath, TomlTemplate)
+
+        # Make references to mutable objects
+        self.channel_specs = self.cfg['channel_specs']
 
         # scan settings
         date_time = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
@@ -20,7 +23,6 @@ class ExaspimConfig(TomlConfig):
         self.destination_path = self.destination_path + date_time + '\\'
         self.filename = 'tile'                                  # base filename
 
-        self.datatype = 'uint16'                                # unit: bits
         self.y_overlap = 15                                     # unit: percent
         self.z_overlap = 15                                     # unit: percent
         self.volume_x_um = 12000                                # unit: um
@@ -141,3 +143,23 @@ class ExaspimConfig(TomlConfig):
         self.z_tiles = ceil(self.volume_z_um/self.z_grid_step_um)
 
         self.n_frames = int(self.volume_x_um/self.pixel_z)      # unit: frames
+
+    def get_etl_offset(self, wavelength: int):
+        return self.cfg.channel_specs[str(wavelength)]['etl']['offset']
+
+    def get_etl_nonlinear(self, wavelength: int):
+        return self.cfg.channel_specs[str(wavelength)]['etl']['nonlinear']
+
+    def get_etl_interp_time(self, wavelength: int):
+        return self.cfg.channel_specs[str(wavelength)]['etl']['interp_time']
+
+    def get_etl_buffer_time(self, wavelength: int):
+        return self.cfg.channel_specs[str(wavelength)]['etl']['buffer_time']
+    # TODO: add setters for the above.
+
+    # @properties for flattening object hierarchy
+    @property
+    def datatype(self):
+        return self.tile_specs['data_type']
+
+
