@@ -2,7 +2,7 @@ import numpy
 from egrabber import *
 
 
-class Camera(object):
+class Camera:
 
 	def __init__(self):
 
@@ -11,8 +11,8 @@ class Camera(object):
 
 	def configure(self, cfg):
 
+		# TODO: we should pass in params individually.
 		self.cfg = cfg
-
 		self.grabber.realloc_buffers(self.cfg.ram_buffer) # allocate RAM buffer N frames
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
 		self.grabber.remote.set("AcquisitionFrameRate", self.cfg.frame_rate) # set camera exposure fps
@@ -21,12 +21,12 @@ class Camera(object):
 			self.grabber.remote.set("TriggerMode", "On") 
 		self.grabber.remote.set("Gain", self.cfg.digital_gain) # set digital gain to 1
 
-	def start(self, live = False):
+	def start(self, live=False):
 
-		if live == False:
-			self.grabber.start(self.cfg.n_frames*self.cfg.n_channels)
-		else:
+		if live:
 			self.grabber.start()
+		else:
+			self.grabber.start(self.cfg.n_frames*self.cfg.n_channels)
 
 	def grab_frame(self):
 

@@ -1,9 +1,8 @@
 import subprocess
-import os
-import glob
 import time
 
-class FileTransfer(object):
+
+class FileTransfer:
 
 	def configure(self, cfg):
 

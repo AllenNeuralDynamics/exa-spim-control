@@ -3,7 +3,7 @@ import os
 import glob
 import time
 
-class DataLogger(object):
+class DataLogger:
 
 	def configure(self, cfg, tile_name):
 
