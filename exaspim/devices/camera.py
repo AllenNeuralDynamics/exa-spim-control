@@ -37,7 +37,7 @@ class Camera:
 		self.tstamp = buffer.get_info(BUFFER_INFO_TIMESTAMP, INFO_DATATYPE_SIZET) # grab new frame time stamp
 		buffer.push()
 
-		return image		
+		return image
 
 	def stop(self):
 

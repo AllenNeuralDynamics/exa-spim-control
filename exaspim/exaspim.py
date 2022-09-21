@@ -30,7 +30,7 @@ class Exaspim(Spim):
                          color_console_output, console_output_level, simulated)
         self.cfg = ExaspimConfig(config_filepath)
 
-        # Separate Processes. Note: these are per-channel.
+        # Separate Processes. Note: most of these are per-channel.
         self.data_logger_worker = None  # External Memento data logger.
         # TODO: make stack_writer its own process.
         self.stack_writer_worker = []  # writes img chunks to a stack on disk
@@ -38,16 +38,16 @@ class Exaspim(Spim):
         self.stack_transfer_worker = []  # writes stacks on disk to the cloud
 
         # Hardware
-        self.cam = Camera() if not self.simulated else Mock(Camera())
-        self.ni = WaveformGenerator()
+        self.cam = Camera() if not self.simulated else Mock(Camera)
+        self.ni = None #WaveformGenerator()
         self.etl = None
         self.gavlo_a = None
         self.gavlo_b = None
         self.daq = None
         self.tigerbox = TigerController(**self.cfg.tiger_obj_kwds) if not \
             self.simulated else SimTiger(**self.cfg.tiger_obj_kwds)
-        self.sample_pose = SamplePose(self.tigerbox)
-        # TODO: how do we focus the camera to the light sheet? (Galvos?)
+        self.sample_pose = SamplePose(self.tigerbox,
+                                      **self.cfg.sample_pose_kwds)
 
         # Extra Internal State attributes for the current image capture
         # sequence. These really only need to persist for logging purposes.
@@ -66,13 +66,13 @@ class Exaspim(Spim):
         self._setup_camera()
 
     def _setup_motion_stage(self):
-        """Configure the sample stage for the Exaspim according to the config."""
+        """Configure the sample stage according to the config."""
         # The tigerbox x axis is the sample pose z axis.
         #   TODO: map this in the config.
         self.tigerbox.set_axis_backlash(x=0)
 
     def _setup_camera(self):
-        """Configure the camera for the Exaspim according to the config."""
+        """Configure the camera according to the config."""
         # pass config parameters into object here.
         pass
 
@@ -95,16 +95,16 @@ class Exaspim(Spim):
             / bytes_per_gig * channel_count
         free_mem_gigabytes = virtual_memory()[1] / bytes_per_gig
         if free_mem_gigabytes < used_mem_gigabytes:
-            raise AssertionError("System does not have enough memory to run "
-                                 "the specified number of channels."
-                                 f"{used_mem_gigabytes}[GB] are required but"
-                                 f"{free_mem_gigabytes}[GB] are available.")
+            raise MemoryError("System does not have enough memory to run "
+                              "the specified number of channels. "
+                              f"{used_mem_gigabytes:.1f}[GB] are required but "
+                              f"{free_mem_gigabytes:.1f}[GB] are available.")
 
     def run_from_config(self):
         self.collect_volumetric_image(self.cfg.volume_x_um,
                                       self.cfg.volume_y_um,
                                       self.cfg.volume_z_um,
-                                      self.cfg.imaging_wavelengths,
+                                      self.cfg.channels,
                                       self.cfg.tile_overlap_x_percent,
                                       self.cfg.tile_overlap_y_percent,
                                       self.cfg.tile_prefix,
@@ -134,22 +134,20 @@ class Exaspim(Spim):
             self.check_system_memory_resources(len(channels), mem_chunk)
         except MemoryError as e:
             self.log.error(e)
-            raise e
-        # TODO: XYZ bounds check that takes the sample size into account.
+            raise
+        # TODO: Ensure we do not exceed volume based on value to tile.
 
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
 
-        # TODO: maybe these should be computed in the config or in a method
-        #   in this class and passed in as parameters.
         # Compute: micrometers per grid step. At 0 tile overlap, this is just
         # the sensor's field of view.
         x_grid_step_um = \
             (1 - tile_overlap_x_percent/100.0) * self.cfg.tile_size_x_um
         y_grid_step_um = \
-            (1 - tile_overlap_y_percent / 100.0) * self.cfg.tile_size_y_um
-        # Compute step count.
+            (1 - tile_overlap_y_percent/100.0) * self.cfg.tile_size_y_um
+        # Compute step and tile count.
         # Always round up so that we cover the desired imaging region.
         xsteps = ceil((volume_x_um - self.cfg.tile_size_x_um)
                       / x_grid_step_um)
@@ -157,29 +155,35 @@ class Exaspim(Spim):
                       / y_grid_step_um)
         zsteps = ceil((volume_z_um - self.cfg.z_step_size_um)
                       / self.cfg.z_step_size_um)
-        self.total_tiles = (1+xsteps)*(1+ysteps)*(1+zsteps)*len(channels)
+        xtiles, ytiles, ztiles = (1 + xsteps, 1 + ysteps, 1 + zsteps)
+        self.total_tiles = xtiles * ytiles * ztiles * len(channels)
 
-        tile_num = 0
+        # TODO: external disk space checks.
 
         # Reset the starting location.
         self.sample_pose.home_in_place()
-        stage_x_pos, stage_y_pos = (0, 0)
+        self.stage_x_pos, self.stage_y_pos = (0, 0)
         stage_z_pos = 0
+        z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
+        self.log.debug("Applying extra move to take out backlash.")
+        self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
+        self.sample_pose.move_absolute(z=stage_z_pos, wait=True)
         # Iterate through the volume; create stacks of tiles along the z axis.
-        for y in range(ysteps + 1):
+        for y in range(ytiles):
             self.sample_pose.move_absolute(y=round(stage_y_pos), wait=True)
             stage_x_pos = 0
-            for x in range(xsteps + 1):
+            for x in range(xtiles):
                 self.sample_pose.move_absolute(x=round(stage_x_pos), wait=True)
-                self.log.info(f"x_tile {x}, y_tile: {y}, stage_position: "
-                              f"({stage_x_pos:.3f}, {stage_y_pos:.3f}")
-                stack_prefix = f"{stack_prefix}_{self.stage_x_pos}_{self.stage_y_pos}"
-                self._collect_tile_stacks(channels, zsteps+1, mem_chunk,
+                self.log.info(f"x_tile {x}, y_tile: {y}, stage_position: " \
+                              f"({self.stage_x_pos:.3f}[um], " \
+                              f"{self.stage_y_pos:.3f}[um])")
+                stack_prefix = f"{tile_prefix}_" \
+                               f"{self.stage_x_pos}_{self.stage_y_pos}"
+                self._collect_tile_stacks(channels, ztiles, mem_chunk,
                                           stack_prefix, img_storage_dir,
                                           deriv_storage_dir)
-                tile_num += zsteps
-                stage_y_pos += self.cfg.y_grid_step_um * UM_TO_STEPS
-            stage_z_pos += self.cfg.z_grid_step_um * UM_TO_STEPS
+                self.stage_x_pos += y_grid_step_um * UM_TO_STEPS
+            self.stage_y_pos += z_grid_step_um * UM_TO_STEPS
 
     def _collect_tile_stacks(self, channels: list, frame_count: int,
                              compressor_chunk_size: int,
@@ -193,7 +197,7 @@ class Exaspim(Spim):
         time) to compress them online and write them to disk.
 
         Since a single image can be ~300[MB], a stack of frames can
-        easily be Gigabytes.
+        easily be gigabytes.
 
         :param channels: a list of channels
         :param frame_count: number of frames to collect into a stack.
@@ -242,7 +246,7 @@ class Exaspim(Spim):
         self.data_logger_worker.configure(self.cfg, f"{stack_prefix}_log")
 
         # For speed, data is transferred in chunks of a specific size.
-        frame_num = 0  # The current frame we're on (channel agnostic).
+        tile_num = 0  # The current frame we're on (channel agnostic).
         buffer_frame_num = 0
         chunk_num = 0
         try:
@@ -253,13 +257,13 @@ class Exaspim(Spim):
             self.ni.start()
             # Note: we assume that these arrive in order, and that we don't
             #   drop any.
-            while frame_num < frame_count:
+            while tile_num < frame_count:
                 for ch in channels:
                     # TODO: write this frame directly into shared memory at the
                     #  right offset.
                     images[ch][buffer_frame_num] = self.cam.grab_frame()
                     self.cam.print_statistics(ch)
-                frame_num += 1
+                    tile_num += 1
                 buffer_frame_num += 1
                 # Dispatch chunk if we have aggregated a full chunk of frames.
                 # OR if we are dispatching the last chunk, and it's not a
@@ -268,13 +272,13 @@ class Exaspim(Spim):
                     for ch in channels:
                         self.stack_writer_worker[ch].write_block(images[ch], chunk_num)
                         # Update the mip from the mip of the current chunk.
-                        if frame_num > compressor_chunk_size:
+                        if tile_num > compressor_chunk_size:
                             mip[ch] = self.data_processor[ch].update_max_project(mip[ch])
                         self.data_processor[ch].max_project(images[ch])
                     buffer_frame_num = 0
                     chunk_num += 1
                 # Dispatch the last chunk if it's not a chunk size multiple.
-                elif frame_num == frame_count:
+                elif tile_num == frame_count - 1:
                     for ch in channels:
                         self.stack_writer_worker[ch].write_block(images[ch], chunk_num)
                         self.data_processor[ch].max_project(images[ch])
@@ -283,33 +287,39 @@ class Exaspim(Spim):
             self.ni.stop()
             self.ni.close()
             self.cam.stop()
+            # TODO: make sure we pull all the camera images out.
             # TODO: make sure this actually kills the data_logger
             self.data_logger.stop()
             self.data_logger.close()
 
+            # Apply lead-in move to take out z backlash.
+            z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
+            self.log.debug("Applying extra move to take out backlash.")
+            self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
+            self.sample_pose.move_absolute(z=0, wait=True)
+
             for ch in self.cfg.channels:
-                # TODO: fix naming of tiles here.
+                # FIXME: fix naming of tiles here.
                 self.stack_writer_worker[ch].close(ch, y_tile, z_tile)
                 self.data_processor[ch].close()
-
-            print('imaging time: ' + str((perf_counter() - start_time) / 3600))
+            self.log.debug(f"imaging time: {str((perf_counter()-start_time)/3600)}")
 
             # Write MIPs to files.
             for ch in channels:
                 mip_path = deriv_storage_dir / Path(f"{stack_prefix}_mip.tiff")
                 # TODO: use the same tiff writer that the mesospim uses.
                 imwrite(mip_path, mip[ch])
-
             if tile_num > 0:
                 self.file_transfer.wait()
                 self.file_transfer.close()
                 for ch in channels:
                     os.remove(self.cfg.source_path + previous_tile_name[ch] + '.ims')
                     os.remove(self.cfg.source_path + previous_tile_name[ch] + '_mip.tiff')
-
-            self.file_transfer.start('tile_x_{:0>4d}_y_{:0>4d}_z_{:0>4d}'.format(y_tile, z_tile, 0))
-
-            if tile_num == self.cfg.z_tiles * self.cfg.y_tiles - 1:
+            # FIXME: y_tile, z_tile.
+            # TODO: what is this string used for?
+            self.file_transfer.start("tile_x_{y_tile:0>4d}_y_{z_tile:0>4d}")
+            # TODO: the file transfer process should handle deleting.
+            if tile_num == frame_count - 1:
                 self.file_transfer.wait()
                 self.file_transfer.close()
                 for ch in channels:
@@ -324,4 +334,7 @@ class Exaspim(Spim):
     def close(self):
         """Safely close all open hardware connections."""
         # stuff here.
-        super().close()
+        self.log.info("Closing NIDAQ connection.")
+        self.ni.close()
+        # TODO: power down lasers.
+        super().close()  # Call this last.

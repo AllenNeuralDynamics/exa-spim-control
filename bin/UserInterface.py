@@ -9,7 +9,7 @@ from exaspim.processes import file_transfer
 from exaspim.processes import data_logger
 # import thorlabs_apt as RotationStage
 import numpy
-from exaspim.exaspim_config import config
+from exaspim.exaspim_config import ExaspimConfig
 from tifffile import imwrite
 from magicclass import magicclass, MagicTemplate
 from magicgui import magicgui

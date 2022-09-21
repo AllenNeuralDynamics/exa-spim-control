@@ -1,8 +1,8 @@
 # Exa-Spim Config
 # No repeat values in here!
 [imaging_specs]
-local_storage_directory = "D:\"
-external_storage_directory = "X:\"
+local_storage_directory = "."#"D:\\"
+external_storage_directory = "."#"X:\\"
 subject_id = "sim_test" # Specimin name.
 tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.tiff.
 tile_overlap_x_percent = 15
@@ -11,12 +11,12 @@ tile_overlap_y_percent = 15
 volume_x_um = 10615.616
 volume_y_um = 7958.72
 volume_z_um = 1000
-imaging_wavelengths = [488, 561]
+laser_wavelengths = [488, 561]
 
 [design_specs]
 slit_width_pixels = 120 # pixels
 image_stack_chunk_size = 128
-memento_executable_path = "C:\Program Files\Euresys\Memento\bin\x86_64\memento.exe"
+memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
 compressor_thread_count = 32
 compression_style = 'lz4'
 file_transfer_protocol = 'xcopy'
@@ -78,8 +78,13 @@ update_frequency = 4e5 # Hz
 [etl_driver_kwds]
 port = 'COM4' # COM7 for ch2, COM4 for ch1
 
-[tiger_controller_driver_keywords]
+[tiger_controller_driver_kwds]
 com_port='COM10'
+
+[sample_pose_kwds.axis_map]
+x = "z"
+y = "y"
+z = "x"
 
 [filter_wheel_kwds]
 tiger_axis = 1 # filterwheel axis according to the tigerbox.
@@ -87,4 +92,3 @@ tiger_axis = 1 # filterwheel axis according to the tigerbox.
 # For imaging run estimations.
 [estimates]
 tiles_per_second = 15
-gigabytes_per_image = 0.8

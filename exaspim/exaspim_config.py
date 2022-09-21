@@ -30,23 +30,23 @@ class ExaspimConfig(SpimConfig):
         self.n_channels = len(self.channels)
                         
         # viewer settings
-        self.autoscale = False                                   # viewer: autoscaling bool
-        self.method = 'Full'                                    # viewer: downscaling method
-        self.frame_rate = 4                                     # viewer: framerate
-        self.scale_x = self.pixel_x                             # viewer: scaling unit for pixels -> renderer seems to default to pyramid position 2
-        self.scale_y = self.pixel_y                             # viewer: scaling unit for pixels
+        self.autoscale = False        # viewer: autoscaling bool
+        self.method = 'Full'          # viewer: downscaling method
+        self.frame_rate = 4           # viewer: framerate
+        #self.scale_x = self.pixel_x  # viewer: scaling unit for pixels -> renderer seems to default to pyramid position 2
+        #self.scale_y = self.pixel_y  # viewer: scaling unit for pixels
 
         # camera settings
-        #self.cam_x = 14192                                      # unit: pixels
-        #self.cam_y = 10640                                      # unit: pixels
-        self.ram_buffer = 8                                     # unit: frames
-        self.dwell_time = 5.0/1000.0                            # unit: s
-        self.digital_gain = 1                                   # unit: ADU
+        #self.cam_x = 14192           # unit: pixels
+        #self.cam_y = 10640           # unit: pixels
+        self.ram_buffer = 8           # unit: frames
+        self.dwell_time = 5.0/1000.0  # unit: s
+        self.digital_gain = 1         # unit: ADU
 
         # data writer settings
         self.n_threads = 32 # threads
-        self.compression = 'lz4'                                # writer: compression method
-        #self.chunk_size = 128                                   # unit: frames
+        self.compression = 'lz4'      # writer: compression method
+        #self.chunk_size = 128         # unit: frames
 
 
         # rotation stage settings
@@ -107,15 +107,15 @@ class ExaspimConfig(SpimConfig):
                                     }
 
         # tiling settings
-        self.y_grid_step_um = \
-            (1 - self.tile_overlap_x_percent/100.0) * self.cam_x*self.pixel_x
-        
-        self.z_grid_step_um = \
-            (1 - self.z_overlap/100.0) * self.cam_y*self.pixel_y     
+        #self.y_grid_step_um = \
+        #    (1 - self.tile_overlap_x_percent/100.0) * self.cam_x*self.pixel_x
+        #
+        #self.z_grid_step_um = \
+        #    (1 - self.z_overlap/100.0) * self.cam_y*self.pixel_y     
 
-        self.y_tiles = ceil(self.volume_y_um/self.y_grid_step_um)
+        #self.y_tiles = ceil(self.volume_y_um/self.y_grid_step_um)
 
-        self.z_tiles = ceil(self.volume_z_um/self.z_grid_step_um)
+        #self.z_tiles = ceil(self.volume_z_um/self.z_grid_step_um)
 
         self.n_frames = int(self.volume_x_um/self.pixel_z)      # unit: frames
 
@@ -203,7 +203,11 @@ class ExaspimConfig(SpimConfig):
     # Keywords
     @property
     def tiger_obj_kwds(self):
-        return self.cfg['tiger_controller_driver_keywords']
+        return self.cfg['tiger_controller_driver_kwds']
+
+    @property
+    def sample_pose_kwds(self):
+        return self.cfg['sample_pose_kwds']
 
     # Derived properties
     @property
