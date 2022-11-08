@@ -7,15 +7,16 @@ subject_id = "sim_test" # Specimin name.
 tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.tiff.
 tile_overlap_x_percent = 15
 tile_overlap_y_percent = 15
-#z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
-volume_x_um = 10615.616
-volume_y_um = 7958.72
-volume_z_um = 1000
+z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
+volume_x_um = 7958.72
+volume_y_um = 10615.616
+volume_z_um = 10
 laser_wavelengths = [488, 561]
 
 [design_specs]
 slit_width_pixels = 120 # pixels
-image_stack_chunk_size = 128
+#image_stack_chunk_size = 128
+image_stack_chunk_size = 8
 memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
 compressor_thread_count = 32
 compression_style = 'lz4'
@@ -23,8 +24,8 @@ file_transfer_protocol = 'xcopy'
 file_transfer_protocol_flags = '/j /i'
 
 [tile_specs]
-x_field_of_view_um = 10615.616 # X image field of view in [um].
-y_field_of_view_um = 7958.72 # Y image field of view in [um].
+x_field_of_view_um = 7958.72 # X image field of view in [um].
+y_field_of_view_um = 10615.616 # Y image field of view in [um].
 row_count_pixels = 10640
 column_count_pixels = 14192
 data_type = "uint16"
@@ -42,6 +43,7 @@ start_of_frame_delay = 950e-6 # seconds. Time between external trigger and first
 [channel_specs.488]
 driver = "Oxxius"
 color = "blue"
+hex_color = "#00ff92"
 #filter_index = 2
 ao_channel = 2
 disable_voltage = 0.0
@@ -63,7 +65,30 @@ setpoint = 0.0
 [channel_specs.488.kwds]
 port='COMxx'
 
-# TODO: 561
+[channel_specs.561]
+driver = "Oxxius"
+color = "yellow-green"
+hex_color = "#c6ff00"
+#filter_index = 2
+ao_channel = 3  # FIXME. everything downstream from here needs real settings.
+disable_voltage = 0.0
+enable_voltage =  5.0
+[channel_specs.561.etl]
+delay = 0.0  # seconds.
+settling_time = 0.025  # seconds.
+min_voltage = 2.37
+max_voltage = 2.96
+amplitude = 0.171
+offset = 2.422
+nonlinear = -0.007
+interp_time = 0.5
+buffer_time = 0.05
+[channel_specs.561.gavlo_a]
+setpoint = 0.0
+[channel_specs.561.galvo_b]
+setpoint = 0.0
+[channel_specs.561.kwds]
+port='COMxx'
 
 [daq_ao_names_to_channels] # lookup table for named hardware to AO channels
 etl = 1

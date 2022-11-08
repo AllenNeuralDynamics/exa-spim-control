@@ -1,3 +1,4 @@
+import logging
 import threading
 import numpy
 from PyImarisWriter import PyImarisWriter as pw
@@ -22,6 +23,7 @@ class StackWriter:
     """Class for writing a stack of frames to a file on disk."""
 
     def __init__(self):
+        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.threads = []
         self.converter = None
         self.callback_class = None
@@ -32,9 +34,17 @@ class StackWriter:
         self.hex_color = "#FFFFFF"
         self.channel_name = None
 
+        self.pixel_x_size_um = None
+        self.pixel_y_size_um = None
+        self.pixel_z_size_um = None
+        self.first_img_centroid_x_um = None
+        self.first_img_centroid_y_um = None
+
     # def configure(self, cfg, stack_name):
     def configure(self, image_rows: int, image_columns: int, image_count: int,
                   first_img_centroid_x: float, first_img_centroid_y: float,
+                  pixel_x_size_um: float, pixel_y_size_um: float,
+                  pixel_z_size_um: float,
                   chunk_size: int, thread_count: int, compression_style: str,
                   datatype: str, dest_path: Path, stack_name: str,
                   channel_name: str, viz_color_hex: str):
@@ -45,6 +55,9 @@ class StackWriter:
         :param image_count: number of images in a stack.
         :param first_img_centroid_x: x centroid of the first tile.
         :param first_img_centroid_y: y centroid of the first tile.
+        :param pixel_x_size_um:
+        :param pixel_y_size_um:
+        :param pixel_z_size_um:
         :param chunk_size: size of the chunk.
         :param thread_count: number of threads to split this operation across.
         :param compression_style: compression algorithm to use on the images.
@@ -58,6 +71,11 @@ class StackWriter:
         self.rows = image_rows
         self.cols = image_columns
         self.img_count = image_count
+        self.pixel_x_size_um = pixel_x_size_um
+        self.pixel_y_size_um = pixel_y_size_um
+        self.pixel_z_size_um = pixel_z_size_um
+        self.first_img_centroid_x_um = first_img_centroid_x
+        self.first_img_centroid_y_um = first_img_centroid_y
 
         # image_size=pw.ImageSize(x=self.cfg.cam_x, y=self.cfg.cam_y, z=self.cfg.n_frames, c=1, t=1)
         image_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.img_count,
@@ -101,8 +119,6 @@ class StackWriter:
         self.threads.append(thread)
 
     def close(self):
-
-        # TODO: refactor to take no options upon closing.
         for thread in self.threads:
             if thread.is_alive():
                 thread.join()
@@ -110,23 +126,33 @@ class StackWriter:
         # Compute the start/end extremes of the enclosed rectangular solid.
         # (x0, y0, z0) position (in [um]) of the beginning of the first voxel,
         # (xf, yf, zf) position (in [um]) of the end of the last voxel.
-        # TODO: figure out a good way to handle this.
-        x0 = self.cols * self.cfg.pixel_x * (y_tile) * (1 - self.cfg.y_overlap / 100)
-        y0 = self.rows * self.cfg.pixel_y * (z_tile) * (1 - self.cfg.z_overlap / 100)
+
+        #x0 = self.cols * self.pixel_x_size_um * (y_tile) * (1 - self.cfg.y_overlap / 100)
+        #y0 = self.rows * self.pixel_y_size_um * (z_tile) * (1 - self.cfg.z_overlap / 100)
+        x0 = self.first_img_centroid_x_um - (self.pixel_x_size_um * 0.5 * self.cols)
+        y0 = self.first_img_centroid_x_um - (self.pixel_y_size_um * 0.5 * self.rows)
         z0 = 0
-        xf = x0 + self.cfg.cam_x * self.cfg.pixel_x
-        yf = y0 + self.cfg.cam_y * self.cfg.pixel_y
-        zf = z0 + self.cfg.n_frames * self.cfg.pixel_z
+        #xf = x0 + self.cfg.cam_x * self.cfg.pixel_x
+        #yf = y0 + self.cfg.cam_y * self.cfg.pixel_y
+        #zf = z0 + self.cfg.n_frames * self.cfg.pixel_z
+        xf = self.first_img_centroid_x_um + (self.pixel_x_size_um * 0.5 * self.cols)
+        yf = self.first_img_centroid_y_um + (self.pixel_y_size_um * 0.5 * self.rows)
+        zf = z0 + self.img_count * self.pixel_z_size_um
+        self.log.debug("Writing metadata to tile stack. First Tile: "
+                       f"({round(x0)}, {round(y0)}, {round(z0)})[um]. "
+                       f"Last Tile: ({round(xf)}, {round(yf)}, {round(zf)})[um].")
         image_extents = pw.ImageExtents(-x0, -y0, -z0, -xf, -yf, -zf)
         parameters = pw.Parameters()
         parameters.set_channel_name(0, self.channel_name)
         time_infos = [datetime.today()]
         color_infos = [pw.ColorInfo()]
-        color_spec = pw.Color((*hex2color(self.hex_color), 1.0))
+        color_spec = pw.Color(*(*hex2color(self.hex_color), 1.0))
         color_infos[0].set_base_color(color_spec)
         # color_infos[0].set_range(0,200)  # possible to autoexpose through this cmd.
+        self.log.debug("finishing image extents.")
         self.converter.Finish(image_extents, parameters, time_infos,
                               color_infos, adjust_color_range)
+        self.log.debug("Destroying converter.")
         self.converter.Destroy()
 
     def write_block_worker(self, data, chunk_num):

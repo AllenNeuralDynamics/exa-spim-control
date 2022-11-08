@@ -14,6 +14,7 @@ class ExaspimConfig(SpimConfig):
         super().__init__(toml_filepath, TomlTemplate)
 
         # Make references to mutable objects
+        self.stage_specs = self.cfg['sample_stage_specs']  # TODO: put in base class?
         self.channel_specs = self.cfg['channel_specs']
 
         # um per pixel
@@ -145,6 +146,14 @@ class ExaspimConfig(SpimConfig):
     @z_step_size_um.setter
     def z_step_size_um(self, um: float):
         self.cfg['imaging_specs']['z_step_size_um'] = um
+        
+    @property
+    def stage_backlash_reset_dist_um(self):
+        return self.stage_specs['backlash_reset_distance_um']
+
+    @stage_backlash_reset_dist_um.setter
+    def stage_backlash_reset_dist_um(self, micrometers: int):
+        self.stage_specs['backlash_reset_distance_um'] = micrometers
 
     @property
     def compressor_style(self):
@@ -170,7 +179,7 @@ class ExaspimConfig(SpimConfig):
 
     @property
     def memento_path(self) -> Path:
-        return self.design_specs['memento_path']
+        return Path(self.design_specs['memento_executable_path'])
 
     @memento_path.setter
     def memento_path(self, path: Path):

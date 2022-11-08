@@ -10,6 +10,13 @@ Note that, to download the egrabber sdk, you will first need to make an account 
 On Linux you will need [ImarisWriter](https://github.com/imaris/ImarisWriter) compiled and installed.
 *Note that PyImarisWriter may need to be tweaked to load a linux \*.so file instead of a windows \*.dll file before the ctype bindings work.*
 
+## TODO: is this the right way to do this?
+After compiling ImarisWriter on Linux, it needs to be installed with:
+````bash
+sudo make install
+ldconfig -n /home/poofjunior/projects/ImarisWriter/release/lib
+````
+
 ### Installing
 
 With egrabber installed via script, enter the downloaded folder's *python* folder and invoke:
@@ -22,7 +29,6 @@ Next, from this folder install this python package with:
 ````
 pip install -e .
 ````
-Note that a fairly recent version of pip (>=21.3) is required.
 
 ## Run
 
