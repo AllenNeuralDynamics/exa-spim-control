@@ -164,14 +164,11 @@ class Exaspim(Spim):
 
         # TODO: external disk space checks.
 
+        # Setup containers
+        stack_transfer_workers = {}  # moves z-stacks to destination folder.
         # Reset the starting location.
         self.sample_pose.zero_in_place()
         self.stage_x_pos, self.stage_y_pos = (0, 0)
-        stage_z_pos = 0
-        z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
-        self.log.debug("Applying extra move to take out backlash.")
-        self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
-        self.sample_pose.move_absolute(z=stage_z_pos, wait=True)
         # Iterate through the volume; create stacks of tiles along the z axis.
         for y in range(ytiles):
             self.sample_pose.move_absolute(y=round(self.stage_y_pos),
@@ -185,9 +182,33 @@ class Exaspim(Spim):
                               f"{self.stage_y_pos:.3f}[um])")
                 stack_prefix = f"{tile_prefix}_" \
                                f"{self.stage_x_pos}_{self.stage_y_pos}"
+                # TODO: filename conventions across these functions must match.
                 self._collect_tile_stacks(channels, ztiles, mem_chunk,
                                           stack_prefix, img_storage_dir,
                                           deriv_storage_dir)
+                # Start transferring tiff file to its destination.
+                # Note: Image transfer is faster than image capture.
+                #   but we still wait for prior process to finish.
+                if stack_transfer_workers:
+                    self.log.info("Waiting for stack transfer processes "
+                                  "to complete.")
+                    for channel_name, worker in stack_transfer_workers.items():
+                        worker.join()
+                # Kick off Stack transfer processes per channel.
+                # Bail early if we don't need to transfer anything.
+                if not img_storage_dir or local_storage_dir == img_storage_dir:
+                    self.log.info("Skipping file transfer process. File is "
+                                  "already at its destination.")
+                    continue
+                for ch in channels:
+                    filename = "FIXME"  # FIXME.
+                    self.log.error(f"Starting transfer process for {filename}.")
+                    filepath_src = local_storage_dir / filename
+                    filepath_dest = img_storage_dir / filename
+                    stack_transfer_workers[ch] = \
+                        FileTransfer(filepath_src, filepath_dest,
+                                     self.cfg.ftp, self.cfg.ftp_flags)
+                # TODO: mip transfer processes.
                 self.stage_x_pos += y_grid_step_um * UM_TO_STEPS
             self.stage_y_pos += self.cfg.z_step_size_um * UM_TO_STEPS
 
@@ -195,7 +216,8 @@ class Exaspim(Spim):
                              compressor_chunk_size: int,
                              stack_prefix: str, image_storage_dir: Path,
                              deriv_storage_dir: Path):
-        """Collect tile stack for every specified channel.
+        """Collect tile stack for every specified channel and write them to
+        disk compressed through ImarisWriter.
 
         The DAQ is already configured to play each laser and then move the
         stage for a specified amount of frames. This func simply collects all
@@ -210,10 +232,14 @@ class Exaspim(Spim):
         :param compressor_chunk_size: the number of batch frames to send to
             the external compression process at a time.
         """
-        # Local external processes. Note: most of these are per-channel.
+        # Local external processes.
         stack_writer_workers = {}  # writes img chunks to a stack on disk.
-        # TODO: Put the backlash in a known state.
+        # Put the backlash into a known state.
         stage_z_pos = 0
+        z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
+        self.log.debug("Applying extra move to take out backlash.")
+        self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
+        self.sample_pose.move_absolute(z=stage_z_pos, wait=True)
         self.sample_pose.move_absolute(z=round(stage_z_pos), wait=True)
         self.setup_imaging_hardware()
         # Create storage containers (in ram) for a tile chunk per-channel.
@@ -222,6 +248,7 @@ class Exaspim(Spim):
         # TODO: change this to x,y,z if possible. Consider how it arrives
         #   from eGrabber.
         images = {}
+        # TODO: we want xy, xz, and yz mips per channel
         mips = {}
         tile_name = {}
         for ch in channels:
@@ -239,8 +266,8 @@ class Exaspim(Spim):
             stack_writer_workers[ch] = StackWriter()
             # TODO: consider moving these params to the StackWriter __init__.
             stack_writer_workers[ch].configure(
-                self.cfg.sensor_row_count, self.cfg.sensor_column_count, frame_count,
-                self.stage_x_pos, self.stage_y_pos,
+                self.cfg.sensor_row_count, self.cfg.sensor_column_count,
+                frame_count, self.stage_x_pos, self.stage_y_pos,
                 self.cfg.x_voxel_size_um, self.cfg.y_voxel_size_um,
                 self.cfg.z_step_size_um,
                 self.cfg.compressor_chunk_size,
@@ -248,11 +275,8 @@ class Exaspim(Spim):
                 self.cfg.datatype, self.img_storage_dir,
                 tile_name[ch], str(ch),
                 self.cfg.channel_specs[str(ch)]['hex_color'])
-            self.stack_transfer_workers[ch] = FileTransfer()
-            self.stack_transfer_workers[ch].configure(self.cfg)
             self.mip_workers[ch] = MIPProcessor()  # has no configure()
-
-        # data_logger is for the camera. It needs to exist betweeen:
+        # data_logger is for the camera. It needs to exist between:
         #   cam.start() and cam.stop()
         self.data_logger_worker = DataLogger(self.deriv_storage_dir,
                                              self.cfg.memento_path,
@@ -274,18 +298,22 @@ class Exaspim(Spim):
                 for ch in channels:
                     # TODO: write this frame directly into shared memory at the
                     #  right offset.
-                    self.log.debug(f"Grabbing frame {tile_num} for {ch}[nm] channel.")
+                    self.log.debug(f"Grabbing frame {tile_num} for {ch}[nm] "
+                                   "channel.")
                     images[ch][buffer_frame_num] = self.cam.grab_frame()
                     self.cam.print_statistics(ch)
                 tile_num += 1
                 buffer_frame_num += 1
+                # TODO: refactor this if/else.
                 # Dispatch chunk if we have aggregated a full chunk of frames.
                 # OR if we are dispatching the last chunk, and it's not a
-                #   multiple of the chunk.
+                # multiple of the chunk.
                 if buffer_frame_num % compressor_chunk_size == 0:
                     for ch in channels:
-                        self.log.debug(f"Writing {ch}[nm] channel chunk.")
-                        stack_writer_workers[ch].write_block(images[ch], chunk_num)
+                        self.log.debug(f"Sending {ch}[nm] channel chunk to "
+                                       "ImarisWriter.")
+                        stack_writer_workers[ch].write_block(images[ch],
+                                                             chunk_num)
                         # Update the mip from the mip of the current chunk.
                         if tile_num > compressor_chunk_size:
                             mips[ch] = self.mip_workers[ch].update_max_project(mips[ch])
@@ -293,16 +321,19 @@ class Exaspim(Spim):
                     buffer_frame_num = 0
                     chunk_num += 1
                 # Dispatch the last chunk if it's not a chunk size multiple.
-                elif tile_num == frame_count - 1:
+                elif tile_num == frame_count:
                     for ch in channels:
-                        self.log.debug(f"Writing remaining {ch}[nm] channel chunk.")
-                        stack_writer_workers[ch].write_block(images[ch], chunk_num)
+                        self.log.debug(f"Sending remaining {ch}[nm] channel "
+                                       "chunk to ImarisWriter.")
+                        stack_writer_workers[ch].write_block(images[ch],
+                                                             chunk_num)
                         self.mip_workers[ch].max_project(images[ch])
                         mips[ch] = self.mip_workers[ch].update_max_project(mips[ch])
         finally:
-            self.log.debug("Closing devices and processes.")
+            self.log.debug(f"Stack imaging time: {(perf_counter()-start_time)/3600.:.3f} hours.")
+            self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop()
-            self.ni.close()
+            # self.ni.close()  # do we need this??
             self.cam.stop()
             # TODO: make sure we pull all the camera images out.
             # TODO: make sure this actually kills the data_logger
@@ -315,16 +346,22 @@ class Exaspim(Spim):
             self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
             self.sample_pose.move_absolute(z=0, wait=True)
 
-            # Safely close only the external processes that we opened.
+            # Safely close the stack writers that we opened.
             for channel_name, worker in stack_writer_workers.items():
                 self.log.debug(f"Closing {channel_name}[nm] channel StackWriter.")
                 worker.close()
-            for channel_name, dp in self.mip_workers.items():
+            for channel_name, worker in self.mip_workers.items():
                 self.log.debug(f"Closing {channel_name}[nm] channel Mip Worker.")
-                dp.close()
-            self.log.debug(f"imaging time: {str((perf_counter()-start_time)/3600.)}")
+                worker.close()
 
             # TODO: kick off file transfer process here.
+            # TODO: just use the mesospim file transferer.
+            for channel_name, worker in self.stack_transfer_workers.items():
+                tile_name = f"tile_{self.stage_x_pos:0>4d}_{self.stage_y_pos:0>4d}_{channel_name}.ims"
+                self.log.info(f"Starting transfer of {tile_name}.")
+                worker.start(tile_name)
+            # TODO: the file transfer process should handle deleting.
+            #   Just call join.
 
             # Write MIPs to files.
             # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
@@ -335,28 +372,8 @@ class Exaspim(Spim):
                     tif.write(mip_data)
                 # TODO: kick off mip transfer process here.
             # FIXME: MIP transfer process should clean up after itself.
-            #if tile_num > 0:
-            #    self.file_transfer.wait()
-            #    self.file_transfer.close()
-            #    for ch in channels:
-            #        os.remove(self.cfg.source_path + previous_tile_name[ch] + '.ims')
-            #        os.remove(self.cfg.source_path + previous_tile_name[ch] + '_mip.tiff')
 
             # TODO: join stack transfer process here
-
-            # FIXME: stack transfer process should clean itself up.
-            self.file_transfer.start(f"tile_{self.stage_x_pos:0>4d}_"
-                                     f"{self.stage_y_pos:0>4d}_{ch}.ims")
-            # TODO: the file transfer process should handle deleting.
-            #   Just call join.
-            if tile_num == frame_count - 1:
-                self.file_transfer.wait()
-                self.file_transfer.close()
-                for ch in channels:
-                    os.remove(self.cfg.source_path + tile_name[ch] + '.ims')
-                    os.remove(self.cfg.source_path + tile_name[ch] + '_mip.tiff')
-
-            previous_tile_name = tile_name
 
     def livestream(self):
         pass

@@ -1,6 +1,6 @@
 import logging
-import threading
 import numpy
+from threading import Thread
 from PyImarisWriter import PyImarisWriter as pw
 from pathlib import Path
 from datetime import datetime
@@ -9,14 +9,18 @@ from matplotlib.colors import hex2color
 
 class MyCallbackClass(pw.CallbackClass):
 
-    def __init__(self):
+    def __init__(self, stack_name):
+        self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
+        self.stack_name = stack_name
         self.mUserDataProgress = 0
 
     def RecordProgress(self, progress, total_bytes_written):
         progress100 = int(progress * 100)
         if progress100 - self.mUserDataProgress >= 10:
             self.mUserDataProgress = progress100
-            print('{}% Complete: {} GB written'.format(self.mUserDataProgress, total_bytes_written / 1.0e9))
+            self.log.debug(f"{self.mUserDataProgress}% Complete;"
+                           f"{total_bytes_written/1.0e9:.3f} GB written for "
+                           f"{self.stack_name}.ims.")
 
 
 class StackWriter:
@@ -100,8 +104,9 @@ class StackWriter:
         application_name = 'PyImarisWriter'
         application_version = '1.0.0'
 
-        self.callback_class = MyCallbackClass()
+        self.callback_class = MyCallbackClass(stack_name)
         filepath = str((dest_path / Path(f"{stack_name}.ims")).absolute())
+
         self.converter = \
             pw.ImageConverter(datatype, image_size, sample_size,
                               dimension_sequence, block_size, filepath,
@@ -112,16 +117,17 @@ class StackWriter:
         self.hex_color = viz_color_hex
 
     def write_block(self, data, chunk_num):
-        thread = threading.Thread(target=self.write_block_worker,
-                                  args=(numpy.transpose(data, (2, 1, 0)),
-                                        chunk_num))
+        thread = Thread(target=self.write_block_worker,
+                        name=f"chunk_{chunk_num}_ch{self.channel_name}_writer",
+                        args=(numpy.transpose(data, (2, 1, 0)), chunk_num))
         thread.start()
         self.threads.append(thread)
 
     def close(self):
         for thread in self.threads:
-            if thread.is_alive():
-                thread.join()
+            #if thread.is_alive():
+            self.log.debug(f"joining {thread.name}")
+            thread.join()
         adjust_color_range = False
         # Compute the start/end extremes of the enclosed rectangular solid.
         # (x0, y0, z0) position (in [um]) of the beginning of the first voxel,
@@ -149,11 +155,12 @@ class StackWriter:
         color_spec = pw.Color(*(*hex2color(self.hex_color), 1.0))
         color_infos[0].set_base_color(color_spec)
         # color_infos[0].set_range(0,200)  # possible to autoexpose through this cmd.
-        self.log.debug("finishing image extents.")
+        self.log.debug("Finishing image extents.")
         self.converter.Finish(image_extents, parameters, time_infos,
                               color_infos, adjust_color_range)
         self.log.debug("Destroying converter.")
         self.converter.Destroy()
+        self.log.debug("Converter destroyed.")
 
     def write_block_worker(self, data, chunk_num):
         self.converter.CopyBlock(data, pw.ImageSize(x=0, y=0, z=chunk_num,
