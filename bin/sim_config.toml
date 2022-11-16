@@ -10,8 +10,9 @@ tile_overlap_y_percent = 15
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
 volume_x_um = 7958.72
 volume_y_um = 10615.616
-volume_z_um = 4
-laser_wavelengths = [488, 561]
+volume_z_um = 32
+#laser_wavelengths = [488, 561]
+laser_wavelengths = [488]
 
 [design_specs]
 slit_width_pixels = 120 # pixels

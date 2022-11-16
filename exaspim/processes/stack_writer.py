@@ -1,30 +1,36 @@
 import logging
 import numpy
-from threading import Thread
+from threading import Thread, Lock
 from PyImarisWriter import PyImarisWriter as pw
 from pathlib import Path
 from datetime import datetime
 from matplotlib.colors import hex2color
+from time import sleep
 
 
-class MyCallbackClass(pw.CallbackClass):
+class ImarisProgressChecker(pw.CallbackClass):
 
     def __init__(self, stack_name):
         self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
         self.stack_name = stack_name
         self.mUserDataProgress = 0
 
+        self.progress = 0  # a float representing the progress.
+
     def RecordProgress(self, progress, total_bytes_written):
+        self.progress = progress
         progress100 = int(progress * 100)
         if progress100 - self.mUserDataProgress >= 10:
             self.mUserDataProgress = progress100
-            self.log.debug(f"{self.mUserDataProgress}% Complete;"
+            self.log.debug(f"{self.mUserDataProgress}% Complete; "
                            f"{total_bytes_written/1.0e9:.3f} GB written for "
                            f"{self.stack_name}.ims.")
 
 
 class StackWriter:
     """Class for writing a stack of frames to a file on disk."""
+
+    #lock = Lock()
 
     def __init__(self):
         self.log = logging.getLogger(f"{__name__}.{self.__class__.__name__}")
@@ -80,7 +86,14 @@ class StackWriter:
         self.pixel_z_size_um = pixel_z_size_um
         self.first_img_centroid_x_um = first_img_centroid_x
         self.first_img_centroid_y_um = first_img_centroid_y
+        # metatdata to write to the file before closing it.
+        self.channel_name = channel_name
+        self.hex_color = viz_color_hex
 
+        #while self.__class__.lock.locked():
+        #    self.log.warning(f"Ch{self.channel_name} waiting to get lock to close file..")
+        #    sleep(1.0)
+        #with self.__class__.lock:
         # image_size=pw.ImageSize(x=self.cfg.cam_x, y=self.cfg.cam_y, z=self.cfg.n_frames, c=1, t=1)
         image_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.img_count,
                                   c=1, t=1)
@@ -104,7 +117,7 @@ class StackWriter:
         application_name = 'PyImarisWriter'
         application_version = '1.0.0'
 
-        self.callback_class = MyCallbackClass(stack_name)
+        self.callback_class = ImarisProgressChecker(stack_name)
         filepath = str((dest_path / Path(f"{stack_name}.ims")).absolute())
 
         self.converter = \
@@ -112,21 +125,21 @@ class StackWriter:
                               dimension_sequence, block_size, filepath,
                               opts, application_name, application_version,
                               self.callback_class)
-        # metatdata to write to the file before closing it.
-        self.channel_name = channel_name
-        self.hex_color = viz_color_hex
 
     def write_block(self, data, chunk_num):
+        name = f"chunk_{chunk_num}_ch{self.channel_name}_writer"
+        self.log.debug(f"Creating {name} thread.")
         thread = Thread(target=self.write_block_worker,
                         name=f"chunk_{chunk_num}_ch{self.channel_name}_writer",
                         args=(numpy.transpose(data, (2, 1, 0)), chunk_num))
-        thread.start()
         self.threads.append(thread)
+        self.threads[-1].start()
 
     def close(self):
+        # Wait for all blocks to be copied.
+        self.log.debug(f"Joining Ch{self.channel_name} remaining threads.")
         for thread in self.threads:
-            #if thread.is_alive():
-            self.log.debug(f"joining {thread.name}")
+            self.log.debug(f"Joining {thread.name}")
             thread.join()
         adjust_color_range = False
         # Compute the start/end extremes of the enclosed rectangular solid.
@@ -144,6 +157,19 @@ class StackWriter:
         xf = self.first_img_centroid_x_um + (self.pixel_x_size_um * 0.5 * self.cols)
         yf = self.first_img_centroid_y_um + (self.pixel_y_size_um * 0.5 * self.rows)
         zf = z0 + self.img_count * self.pixel_z_size_um
+        #while self.__class__.lock.locked():
+        #    self.log.warning(f"Ch{self.channel_name} waiting to get lock to close file..")
+        #    sleep(0.001)
+        #with self.__class__.lock:
+
+        # Wait for file writing to finish.
+        if self.callback_class.progress < 1.0:
+            self.log.debug(f"Waiting for Data writing to complete for "
+                           f"channel {self.channel_name}[nm] channel."
+                           f"Progress is {self.callback_class.progress:.3f}.")
+        while self.callback_class.progress < 1.0:
+            sleep(0.001)
+
         self.log.debug("Writing metadata to tile stack. First Tile: "
                        f"({round(x0)}, {round(y0)}, {round(z0)})[um]. "
                        f"Last Tile: ({round(xf)}, {round(yf)}, {round(zf)})[um].")
@@ -155,13 +181,23 @@ class StackWriter:
         color_spec = pw.Color(*(*hex2color(self.hex_color), 1.0))
         color_infos[0].set_base_color(color_spec)
         # color_infos[0].set_range(0,200)  # possible to autoexpose through this cmd.
+
         self.log.debug("Finishing image extents.")
         self.converter.Finish(image_extents, parameters, time_infos,
                               color_infos, adjust_color_range)
         self.log.debug("Destroying converter.")
         self.converter.Destroy()
         self.log.debug("Converter destroyed.")
+        self.log.debug(f"Data writing for {self.channel_name}[mm] channel is complete.")
 
     def write_block_worker(self, data, chunk_num):
+        #while self.__class__.lock.locked():
+        #    #self.log.warning(f"Ch{self.channel_name} Chunk {chunk_num} thread waiting to get lock.")
+        #    sleep(0.001)
+        #with self.__class__.lock:
+        #    self.log.warning(f"Ch{self.channel_name} Chunk {chunk_num} got the lock.")
+        self.log.debug(f"Dispatching chunk {chunk_num} block to compressor for {self.channel_name}[nm] channel.")
         self.converter.CopyBlock(data, pw.ImageSize(x=0, y=0, z=chunk_num,
                                                     c=0, t=0))
+        self.log.debug(f"Done dispatching chunk {chunk_num} block to compressor for {self.channel_name}[nm] channel.")
+        # Image writing does not start until all threads have been started?
