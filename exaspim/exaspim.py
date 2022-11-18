@@ -163,6 +163,9 @@ class Exaspim(Spim):
 
         # TODO: external disk space checks.
 
+        import os
+        print(f"main process id: {os.getpid()}")
+
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
         # Reset the starting location.
@@ -262,18 +265,18 @@ class Exaspim(Spim):
                                 dtype=self.cfg.datatype)
             # Create/Configure per-channel processes.
             self.log.debug(f"Creating StackWriter for {ch}[nm] channel.")
-            stack_writer_workers[ch] = StackWriter()
-            # TODO: consider moving these params to the StackWriter __init__.
-            stack_writer_workers[ch].configure(
-                self.cfg.sensor_row_count, self.cfg.sensor_column_count,
-                frame_count, self.stage_x_pos, self.stage_y_pos,
-                self.cfg.x_voxel_size_um, self.cfg.y_voxel_size_um,
-                self.cfg.z_step_size_um,
-                self.cfg.compressor_chunk_size,
-                self.cfg.compressor_thread_count, self.cfg.compressor_style,
-                self.cfg.datatype, self.img_storage_dir,
-                tile_name[ch], str(ch),
-                self.cfg.channel_specs[str(ch)]['hex_color'])
+            stack_writer_workers[ch] = \
+                StackWriter(self.cfg.sensor_row_count,
+                            self.cfg.sensor_column_count,
+                            frame_count, self.stage_x_pos, self.stage_y_pos,
+                            self.cfg.x_voxel_size_um, self.cfg.y_voxel_size_um,
+                            self.cfg.z_step_size_um,
+                            self.cfg.compressor_chunk_size,
+                            self.cfg.compressor_thread_count, self.cfg.compressor_style,
+                            self.cfg.datatype, self.img_storage_dir,
+                            tile_name[ch], str(ch),
+                            self.cfg.channel_specs[str(ch)]['hex_color'])
+            stack_writer_workers[ch].start()
             self.mip_workers[ch] = MIPProcessor()  # has no configure()
         # data_logger is for the camera. It needs to exist between:
         #   cam.start() and cam.stop()
@@ -312,8 +315,9 @@ class Exaspim(Spim):
                     for ch in channels:
                         self.log.debug(f"Sending {ch}[nm] channel chunk to "
                                        "ImarisWriter.")
-                        stack_writer_workers[ch].write_block(images[ch],
-                                                             chunk_num)
+                        # FIXME
+                        #stack_writer_workers[ch].write_block(images[ch],
+                        #                                     chunk_num)
                         # Update the mip from the mip of the current chunk.
                         #if tile_num > compressor_chunk_size:
                         #    mips[ch] = self.mip_workers[ch].update_max_project(mips[ch])
@@ -325,8 +329,9 @@ class Exaspim(Spim):
                     for ch in channels:
                         self.log.debug(f"Sending remaining {ch}[nm] channel "
                                        "chunk to ImarisWriter.")
-                        stack_writer_workers[ch].write_block(images[ch],
-                                                             chunk_num)
+                        # FIXME
+                        #stack_writer_workers[ch].write_block(images[ch],
+                        #                                     chunk_num)
                         #self.mip_workers[ch].max_project(images[ch])
                         #mips[ch] = self.mip_workers[ch].update_max_project(mips[ch])
         finally:
@@ -343,7 +348,8 @@ class Exaspim(Spim):
             # Safely close the stack writers that we opened.
             for channel_name, worker in stack_writer_workers.items():
                 self.log.debug(f"Closing {channel_name}[nm] channel StackWriter.")
-                worker.close()
+                worker.join()
+                #worker.close()
             for channel_name, worker in self.mip_workers.items():
                 self.log.debug(f"Closing {channel_name}[nm] channel Mip Worker.")
                 worker.close()
