@@ -1,15 +1,19 @@
-import numpy
-from multiprocessing import Process
+import numpy as np
+from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
+from multiprocessing import Process, Array, Event
+from multiprocessing.shared_memory import SharedMemory
+from ctypes import c_wchar
 from PyImarisWriter import PyImarisWriter as pw
 from pathlib import Path
 from datetime import datetime
 from matplotlib.colors import hex2color
 from time import sleep
-
-from math import ceil
+from math import floor, ceil
 
 
 class ImarisProgressChecker(pw.CallbackClass):
+    """Class for tracking progress of an active ImarisWriter disk-writing
+    operation."""
 
     def __init__(self, stack_name):
         self.stack_name = stack_name
@@ -19,7 +23,7 @@ class ImarisProgressChecker(pw.CallbackClass):
     def RecordProgress(self, progress, total_bytes_written):
         self.progress = progress
         progress100 = int(progress * 100)
-        if progress100 - self.mUserDataProgress >= 10:
+        if progress100 - self.mUserDataProgress >= 25:
             self.mUserDataProgress = progress100
             print(f"{self.mUserDataProgress}% Complete; "
                   f"{total_bytes_written/1.0e9:.3f} GB written for "
@@ -27,7 +31,6 @@ class ImarisProgressChecker(pw.CallbackClass):
 
 
 class StackWriter(Process):
-
     """Class for writing a stack of frames to a file on disk."""
 
     def __init__(self, image_rows: int, image_columns: int, image_count: int,
@@ -57,9 +60,9 @@ class StackWriter(Process):
         :param viz_color_hex: color (as a hex string) for the file signal data.
         """
         super().__init__()
-
-        self.rows = image_rows
+        # metadata to create the file.
         self.cols = image_columns
+        self.rows = image_rows
         self.img_count = image_count
         self.first_img_centroid_x_um = first_img_centroid_x
         self.first_img_centroid_y_um = first_img_centroid_y
@@ -71,12 +74,34 @@ class StackWriter(Process):
         self.chunk_size = chunk_size
         self.thread_count = thread_count
         self.compression_style = compression_style
-        self.datatype = datatype
+        self.dtype = datatype
         self.dest_path = dest_path
         self.stack_name = stack_name
         self.hex_color = viz_color_hex
-        self.callback_class = ImarisProgressChecker(self.stack_name)
         self.converter = None
+        # Specs for reconstructing the shared memory object.
+        self._shm_name = Array(c_wchar, 32)  # hidden and exposed via property.
+        self.shm_shape = (self.cols, self.rows, self.chunk_size)
+        self.shm_nbytes = np.prod(self.shm_shape)*np.dtype(self.dtype).itemsize
+        self.frames = None  # will be replaced with an ndarray from shared mem.
+        # Flow control attributes to synchronize inter-process communication.
+        self.done_reading = Event()
+        self.done_reading.set()  # Set after processing all data in shared mem.
+        # Internal flow control attributes to monitor compression progress.
+        self.callback_class = ImarisProgressChecker(self.stack_name)
+
+    @property
+    def shm_name(self):
+        """Convenience getter to extract the shared memory address (string)
+        from the c array."""
+        return str(self._shm_name[:]).split('\x00')[0]
+
+    @shm_name.setter
+    def shm_name(self, name: str):
+        """Convenience setter to set the string value within the c array."""
+        for i, c in enumerate(name):
+            self._shm_name[i] = c
+        self._shm_name[len(name)] = '\x00'  # Null terminate the string.
 
     def run(self):
         image_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.img_count, c=1, t=1)
@@ -90,7 +115,7 @@ class StackWriter(Process):
         # compression options are limited.
         if self.compression_style == 'lz4':
             opts.mCompressionAlgorithmType = pw.eCompressionAlgorithmShuffleLZ4
-        elif self.compression_style == 'none':
+        elif self.compression_style.upper() == 'None':
             opts.mCompressionAlgorithmType = pw.eCompressionAlgorithmNone
 
         application_name = 'PyImarisWriter'
@@ -98,25 +123,31 @@ class StackWriter(Process):
 
         filepath = str((self.dest_path / Path(f"{self.stack_name}.ims")).absolute())
         self.converter = \
-            pw.ImageConverter(self.datatype, image_size, sample_size, dimension_sequence, block_size,
+            pw.ImageConverter(self.dtype, image_size, sample_size, dimension_sequence, block_size,
                               filepath, opts, application_name, application_version, self.callback_class)
 
         # Write some dummy data to file.
         chunk_count = ceil(self.img_count/self.chunk_size)
-        last_chunk = chunk_count - 1
         last_chunk_size = self.img_count % self.chunk_size
+        last_chunk = chunk_count - 1
         for chunk_num in range(chunk_count):
-            chunk_size = last_chunk_size if chunk_num == last_chunk else self.chunk_size
-            data = numpy.zeros((chunk_size, self.rows, self.cols), dtype="uint16")
-            print(f"Ch{self.channel_name} writing dummy chunk {chunk_num+1}/{chunk_count} of size {data.shape}.")
             block_index = pw.ImageSize(x=0, y=0, z=chunk_num, c=0, t=0)
+            # Wait for new data.
+            while self.done_reading.is_set():
+                sleep(0.001)
+            # Attach a reference to the data from shared memory.
+            shm = SharedMemory(self.shm_name, size=self.shm_nbytes)
+            frames = np.ndarray(self.shm_shape, self.dtype, buffer=shm.buf)
+            print(f"Ch{self.channel_name} writing chunk "
+                  f"{chunk_num+1}/{chunk_count} of size {frames.shape}.")
             # TODO: do we need this?
-            #self.converter.CopyBlock(numpy.transpose(data, (2, 1, 0)), block_index)
-            self.converter.CopyBlock(data, block_index)
-        #print(f"Ch{self.channel_name} Closing file!")
-        self.close()
-
-    def close(self):
+            #self.converter.CopyBlock(np.transpose(frames, (2, 1, 0)), block_index)
+            self.converter.CopyBlock(frames, block_index)
+            shm.close()
+            self.done_reading.set()
+#        self.close()
+#
+#    def close(self):
         # Compute the start/end extremes of the enclosed rectangular solid.
         # (x0, y0, z0) position (in [um]) of the beginning of the first voxel,
         # (xf, yf, zf) position (in [um]) of the end of the last voxel.
@@ -144,6 +175,7 @@ class StackWriter(Process):
                   f"channel {self.channel_name}[nm] channel."
                   f"Progress is {self.callback_class.progress:.3f}.")
 
+        print("Writing image extents and closing file.")
         image_extents = pw.ImageExtents(-x0, -y0, -z0, -xf, -yf, -zf)
         adjust_color_range = False
         parameters = pw.Parameters()
@@ -160,20 +192,37 @@ class StackWriter(Process):
 
 
 if __name__ == "__main__":
+    """Test Script for running n processes standalone with the specs below."""
     from pathlib import Path
     import copy
 
+    import os
+    import psutil
+
+    def get_mem_usage():
+        current_process = psutil.Process(os.getpid())
+        mem = current_process.memory_percent()
+        for child in current_process.children(recursive=True):
+            mem += child.memory_percent()
+        return mem
+
+    rows = 10640
+    cols = 14192
+    num_frames = 100
+    chunk_size = 4
+    num_processes = 2
+
     kwargs = {
-        "image_rows": 400,  # 10640,
-        "image_columns": 600,  # 14192,
-        "image_count": 100,  # TODO: figure out why non-chunk-size multiples are hanging.
+        "image_rows": rows,
+        "image_columns": cols,
+        "image_count": num_frames,  # TODO: figure out why non-chunk-size multiples are hanging.
         "first_img_centroid_x": 0,
         "first_img_centroid_y": 0,
         "pixel_x_size_um": 7958.72,
         "pixel_y_size_um": 10615.616,
         "pixel_z_size_um": 1,
-        "chunk_size": 8,
-        "thread_count": 32, # This is buggy at very low numbers?
+        "chunk_size": chunk_size,
+        "thread_count": 32,  # This is buggy at very low numbers?
         "compression_style": 'lz4',
         "datatype": "uint16",
         "dest_path": Path("."),
@@ -182,13 +231,51 @@ if __name__ == "__main__":
         "viz_color_hex": "#00ff92"
     }
 
-    processes = []
-    for i in range(2):
-        kwds = copy.deepcopy(kwargs)
-        kwds["stack_name"] = f"test_process_{i}"
-        kwds["channel_name"] = f"{i}"
-        processes.append(StackWriter(**kwds))
-    for process in processes:
-        process.start()
-    for process in processes:
-        process.join()
+    print(f"Starting mem usage: {get_mem_usage()}")
+    ps_buffers = [SharedDoubleBuffer((cols, rows, chunk_size), "uint16")
+                  for i in range(num_processes)]
+    print(f"Mem usage after SharedDoubleBuffer allocation: {get_mem_usage()}")
+    ps_workers = []
+    try:
+        print(f"Creating and starting {num_processes} processes.")
+        for i in range(num_processes):
+            kwds = copy.deepcopy(kwargs)
+            kwds["stack_name"] = f"test_process_{i}"
+            kwds["channel_name"] = f"{i}"
+            ps_workers.append(StackWriter(**kwds))
+            ps_workers[-1].start()
+        print(f"Producing data.")
+        last_frame_index = num_frames - 1
+        for frame_index in range(num_frames):
+            chunk_num = floor(frame_index / chunk_size)
+            chunk_index = frame_index % chunk_size
+            #print(f"frame: {frame_index} | chunk_num: {chunk_num} | chunk_index: {chunk_index}")
+            # Write some data into each buffer
+            for ps_buffer in ps_buffers:
+                # Create fake data. Replace with cam.grab_frame() or similar.
+                ps_buffer.write_buf[chunk_index][:, :] = chunk_index
+            # Dispatch chunk if it is full
+            if chunk_index == chunk_size-1 or frame_index == last_frame_index:
+                for ps_buffer, ps_worker in zip(ps_buffers, ps_workers):
+                    ps_buffer.toggle_buffers()
+                    # Send over the read buffer shm name.
+                    ps_worker.shm_name = ps_buffer.read_buf_mem_name
+                    ps_worker.done_reading.clear()
+            # Wait for all processes to finish before sending more data.
+            # TODO: we can probably handle this more elegantly.
+            print("Waiting for processes to handle new data.")
+            print(f"Mem usage during operation: {get_mem_usage()}")
+            while not all([ps.done_reading.is_set() for ps in ps_workers]):
+                sleep(0.001)
+            #for ps_worker in ps_workers:
+            #    ps_worker.done_reading.wait()
+    finally:
+        # kill the process? TODO
+        #data_writer_worker.terminate()
+        print("Joining processes")
+        for ps_worker in ps_workers:
+            ps_worker.join()
+        # Release shared memory.
+        print("Unlinking shared memory.")
+        for ps_buffer in ps_buffers:
+            ps_buffer.close_and_unlink()
