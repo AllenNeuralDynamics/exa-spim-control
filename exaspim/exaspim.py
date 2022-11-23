@@ -1,6 +1,7 @@
 """Abstraction of the ExaSPIM Instrument."""
 
 import numpy as np
+import traceback
 from math import ceil
 from pathlib import Path
 from psutil import virtual_memory
@@ -72,6 +73,7 @@ class Exaspim(Spim):
         # pass config parameters into object here.
         # FIXME: is this the right shape?
         if self.simulated:
+            # Image shape is a buffer organized by y and then by x.
             self.cam.grab_frame.return_value = \
                 np.zeros((self.cfg.sensor_row_count,
                           self.cfg.sensor_column_count),
@@ -229,8 +231,12 @@ class Exaspim(Spim):
         :param chunk_size: the number of batch frames to send to
             the external compression process at a time.
         """
-        # External processes.
         stack_writer_workers = {}  # writes img chunks to a stack on disk.
+        img_buffers = {}  # Shared double buffers for acquisition and compression.
+        mips = {}  # TODO: this should be an external process.
+        tile_names = {}
+        # Flow Control flags.
+        stack_capture_complete = False
         # Put the backlash into a known state.
         stage_z_pos = 0
         z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
@@ -239,24 +245,14 @@ class Exaspim(Spim):
         self.sample_pose.move_absolute(z=stage_z_pos, wait=True)
         self.sample_pose.move_absolute(z=round(stage_z_pos), wait=True)
         self.setup_imaging_hardware()
-        # Create storage containers (in ram) for a tile chunk per-channel.
-        # TODO: change this to x,y,z if possible. Consider how it arrives
-        #   from eGrabber.
-        img_buffers = {}
-        # TODO: we want xy, xz, and yz mips per channel
-        mips = {}
-        tile_name = {}
+        mem_shape = (self.cfg.sensor_column_count, self.cfg.sensor_row_count,
+                     chunk_size)
         for ch in channels:
-            tile_name[ch] = f"{stack_prefix}_{ch}"
+            tile_names[ch] = f"{stack_prefix}_{ch}"
             # Note: a stack of 64 frames is ~18[GB] in memory.
-            # FIXME: what is the shape?
-            img_buffers[ch] = SharedDoubleBuffer((self.cfg.sensor_column_count,
-                                                  self.cfg.sensor_row_count,
-                                                  chunk_size),
-                                                 dtype=self.cfg.datatype)
-            mips[ch] = np.zeros((self.cfg.sensor_column_count,
-                                 self.cfg.sensor_row_count),
-                                dtype=self.cfg.datatype)
+            # TODO: shape should be
+            img_buffers[ch] = SharedDoubleBuffer(mem_shape, dtype=self.cfg.datatype)
+            mips[ch] = np.zeros(mem_shape[:2], dtype=self.cfg.datatype)  # should be an external process.
             # Create/Configure per-channel processes.
             self.log.debug(f"Creating StackWriter for {ch}[nm] channel.")
             stack_writer_workers[ch] = \
@@ -269,7 +265,7 @@ class Exaspim(Spim):
                             self.cfg.compressor_thread_count,
                             self.cfg.compressor_style,
                             self.cfg.datatype, self.img_storage_dir,
-                            tile_name[ch], str(ch),
+                            tile_names[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
             stack_writer_workers[ch].start()
             self.mip_workers[ch] = MIPProcessor()  # has no configure()
@@ -280,7 +276,6 @@ class Exaspim(Spim):
         #                                     f"{stack_prefix}_log")
 
         # For speed, data is transferred in chunks of a specific size.
-        frame_num = 0  # The current frame we're on (channel agnostic).
         start_time = perf_counter()
         try:
             # TODO: wait for data_logger to actually start.
@@ -298,9 +293,8 @@ class Exaspim(Spim):
                                    f"{ch_index}[nm] channel.")
                     # if self.simulated:
                     #     sleep(1/6.4)
-                    # TODO: figure out how frombuffer works.
                     # TODO: don't do any reshaping if possible.
-                    img_buffers[ch_index].write_buf[:, :, frame_index] = \
+                    img_buffers[ch_index].write_buf[:, :, chunk_index] = \
                         np.transpose(self.cam.grab_frame())
                     #self.cam.print_statistics(ch_index)
                 # Dispatch chunk if we have aggregated a full chunk of frames.
@@ -319,7 +313,9 @@ class Exaspim(Spim):
                         stack_writer_workers[ch_index].shm_name = \
                             img_buffers[ch_index].read_buf_mem_name
                         stack_writer_workers[ch_index].done_reading.clear()
+            stack_capture_complete = True
         except Exception:
+            traceback.print_exc()
             raise
         finally:
             self.log.debug(f"Stack imaging time: {(perf_counter()-start_time)/3600.:.3f} hours.")
@@ -331,9 +327,10 @@ class Exaspim(Spim):
             #self.data_logger_worker.stop()
             #self.data_logger_worker.close()
             # Wait for stack writers to finish writing files to disk.
+            timeout = None if stack_capture_complete else 60
             for ch_name, worker in stack_writer_workers.items():
                 self.log.debug(f"Closing {ch_name}[nm] channel StackWriter.")
-                worker.join()
+                worker.join(timeout=timeout)
             # for ch_name, worker in self.mip_workers.items():
             #     self.log.debug(f"Closing {ch_name}[nm] channel Mip Worker.")
             #     worker.close()
