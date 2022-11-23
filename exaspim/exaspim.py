@@ -14,6 +14,7 @@ from exaspim.processes.mip_processor import MIPProcessor
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.processes.data_logger import DataLogger
+from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
 from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
 from tigerasi.sim_tiger_controller import TigerController as SimTiger
 # TODO: consolodate these later.
@@ -69,6 +70,7 @@ class Exaspim(Spim):
     def _setup_camera(self):
         """Configure the camera according to the config."""
         # pass config parameters into object here.
+        # FIXME: is this the right shape?
         if self.simulated:
             self.cam.grab_frame.return_value = \
                 np.zeros((self.cfg.sensor_row_count,
@@ -89,12 +91,12 @@ class Exaspim(Spim):
             compression
         :raises MemoryError:
         """
-        # Check memory. Can we even allocate enough ram for all the specified
-        #   channels?
+        # Calculate double buffer size for all channels.
         bytes_per_gig = (1024**3)
         used_mem_gigabytes = \
-            (self.cfg.bytes_per_image * mem_chunk) \
-            / bytes_per_gig * channel_count
+            ((self.cfg.bytes_per_image * mem_chunk * 2) / bytes_per_gig) \
+            * channel_count
+        # TODO: we probably want to throw in 1-2gigs of fudge factor.
         free_mem_gigabytes = virtual_memory()[1] / bytes_per_gig
         if free_mem_gigabytes < used_mem_gigabytes:
             raise MemoryError("System does not have enough memory to run "
@@ -138,11 +140,6 @@ class Exaspim(Spim):
         except MemoryError as e:
             self.log.error(e)
             raise
-        # TODO: Ensure we do not exceed volume based on value to tile.
-
-        # Iterate through the volume through z, then x, then y.
-        # Play waveforms for the laser, camera trigger, and stage trigger.
-        # Capture the fully-formed images as they arrive.
 
         # Compute: micrometers per grid step. At 0 tile overlap, this is just
         # the sensor's field of view.
@@ -161,17 +158,15 @@ class Exaspim(Spim):
         xtiles, ytiles, ztiles = (1 + xsteps, 1 + ysteps, 1 + zsteps)
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
 
-        # TODO: external disk space checks.
-
-        import os
-        print(f"main process id: {os.getpid()}")
-
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
         # Reset the starting location.
         self.sample_pose.zero_in_place()
         self.stage_x_pos, self.stage_y_pos = (0, 0)
-        # Iterate through the volume; create stacks of tiles along the z axis.
+        # Iterate through the volume through z, then x, then y.
+        # Play waveforms for the laser, camera trigger, and stage trigger.
+        # Capture the fully-formed images as they arrive.
+        # Create stacks of tiles along the z axis per channel.
         for y in range(ytiles):
             self.sample_pose.move_absolute(y=round(self.stage_y_pos),
                                            wait=True)
@@ -215,8 +210,8 @@ class Exaspim(Spim):
             self.stage_y_pos += self.cfg.z_step_size_um * UM_TO_STEPS
 
     def _collect_tile_stacks(self, channels: list[int], frame_count: int,
-                             compressor_chunk_size: int,
-                             stack_prefix: str, image_storage_dir: Path,
+                             chunk_size: int, stack_prefix: str,
+                             image_storage_dir: Path,
                              deriv_storage_dir: Path):
         """Collect tile stack for every specified channel and write them to
         disk compressed through ImarisWriter.
@@ -231,10 +226,10 @@ class Exaspim(Spim):
 
         :param channels: a list of channels
         :param frame_count: number of frames to collect into a stack.
-        :param compressor_chunk_size: the number of batch frames to send to
+        :param chunk_size: the number of batch frames to send to
             the external compression process at a time.
         """
-        # Local external processes.
+        # External processes.
         stack_writer_workers = {}  # writes img chunks to a stack on disk.
         # Put the backlash into a known state.
         stage_z_pos = 0
@@ -245,23 +240,22 @@ class Exaspim(Spim):
         self.sample_pose.move_absolute(z=round(stage_z_pos), wait=True)
         self.setup_imaging_hardware()
         # Create storage containers (in ram) for a tile chunk per-channel.
-        # TODO: if we have enough memory, implement this as a double buffer
-        #   with SharedMemory. ImarisWriter can be invoked in another process.
         # TODO: change this to x,y,z if possible. Consider how it arrives
         #   from eGrabber.
-        images = {}
+        img_buffers = {}
         # TODO: we want xy, xz, and yz mips per channel
         mips = {}
         tile_name = {}
         for ch in channels:
             tile_name[ch] = f"{stack_prefix}_{ch}"
-            # Note: a stack of 128 frames is ~36[GB] in memory.
-            images[ch] = np.zeros((compressor_chunk_size,
-                                   self.cfg.sensor_row_count,
-                                   self.cfg.sensor_column_count),
-                                  dtype=self.cfg.datatype)
-            mips[ch] = np.zeros((self.cfg.sensor_row_count,
-                                 self.cfg.sensor_column_count),
+            # Note: a stack of 64 frames is ~18[GB] in memory.
+            # FIXME: what is the shape?
+            img_buffers[ch] = SharedDoubleBuffer((self.cfg.sensor_column_count,
+                                                  self.cfg.sensor_row_count,
+                                                  chunk_size),
+                                                 dtype=self.cfg.datatype)
+            mips[ch] = np.zeros((self.cfg.sensor_column_count,
+                                 self.cfg.sensor_row_count),
                                 dtype=self.cfg.datatype)
             # Create/Configure per-channel processes.
             self.log.debug(f"Creating StackWriter for {ch}[nm] channel.")
@@ -272,7 +266,8 @@ class Exaspim(Spim):
                             self.cfg.x_voxel_size_um, self.cfg.y_voxel_size_um,
                             self.cfg.z_step_size_um,
                             self.cfg.compressor_chunk_size,
-                            self.cfg.compressor_thread_count, self.cfg.compressor_style,
+                            self.cfg.compressor_thread_count,
+                            self.cfg.compressor_style,
                             self.cfg.datatype, self.img_storage_dir,
                             tile_name[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
@@ -285,74 +280,63 @@ class Exaspim(Spim):
         #                                     f"{stack_prefix}_log")
 
         # For speed, data is transferred in chunks of a specific size.
-        tile_num = 0  # The current frame we're on (channel agnostic).
-        buffer_frame_num = 0
-        chunk_num = 0
+        frame_num = 0  # The current frame we're on (channel agnostic).
         start_time = perf_counter()
         try:
             # TODO: wait for data_logger to actually start.
             #self.data_logger_worker.start()
             self.cam.start(live=False)
             self.ni.start()
-            # Note: we assume that these arrive in order, and that we don't
-            #   drop any.
-            while tile_num < frame_count:
-                for ch in channels:
-                    # TODO: write this frame directly into shared memory at the
-                    #  right offset.
-                    self.log.debug(f"Grabbing frame {tile_num} for {ch}[nm] "
-                                   "channel.")
-                    if self.simulated:
-                        sleep(1/6.0)
-                    images[ch][buffer_frame_num] = self.cam.grab_frame()
-                    self.cam.print_statistics(ch)
-                tile_num += 1
-                buffer_frame_num += 1
+            # We assume images arrive serialized in repeating channel order.
+            last_frame_index = frame_count - 1
+            for frame_index in range(frame_count):
+                chunk_index = frame_index % chunk_size
+                # Deserialize camera input into corresponding channel. i.e:
+                # grab one tile per channel before moving onto the next tile.
+                for ch_index in channels:
+                    self.log.debug(f"Grabbing frame {frame_index} for "
+                                   f"{ch_index}[nm] channel.")
+                    # if self.simulated:
+                    #     sleep(1/6.4)
+                    # TODO: figure out how frombuffer works.
+                    # TODO: don't do any reshaping if possible.
+                    img_buffers[ch_index].write_buf[:, :, frame_index] = \
+                        np.transpose(self.cam.grab_frame())
+                    #self.cam.print_statistics(ch_index)
                 # Dispatch chunk if we have aggregated a full chunk of frames.
                 # OR if we are dispatching the last chunk, and it's not a
                 # multiple of the chunk.
-                if buffer_frame_num % compressor_chunk_size == 0:
-                    for ch in channels:
-                        self.log.debug(f"Sending {ch}[nm] channel chunk to "
-                                       "ImarisWriter.")
-                        # FIXME
-                        #stack_writer_workers[ch].write_block(images[ch],
-                        #                                     chunk_num)
-                        # Update the mip from the mip of the current chunk.
-                        #if tile_num > compressor_chunk_size:
-                        #    mips[ch] = self.mip_workers[ch].update_max_project(mips[ch])
-                        #self.mip_workers[ch].max_project(images[ch])
-                    buffer_frame_num = 0
-                    chunk_num += 1
-                # Dispatch the last chunk if it's not a chunk size multiple.
-                elif tile_num == frame_count:
-                    for ch in channels:
-                        self.log.debug(f"Sending remaining {ch}[nm] channel "
-                                       "chunk to ImarisWriter.")
-                        # FIXME
-                        #stack_writer_workers[ch].write_block(images[ch],
-                        #                                     chunk_num)
-                        #self.mip_workers[ch].max_project(images[ch])
-                        #mips[ch] = self.mip_workers[ch].update_max_project(mips[ch])
+                if chunk_index == chunk_size - 1 or frame_index == last_frame_index:
+                    # Wait for z stack writing to finish before dispatching
+                    # more data.
+                    while not all([w.done_reading.is_set() for _, w in stack_writer_workers.items()]):
+                        sleep(0.001)
+                    # Dispatch chunk to each stack-writing compression process.
+                    # Toggle double buffer to continue writing images.
+                    for ch_index in channels:
+                        img_buffers[ch_index].toggle_buffers()
+                        # Send over the read buffer shm name.
+                        stack_writer_workers[ch_index].shm_name = \
+                            img_buffers[ch_index].read_buf_mem_name
+                        stack_writer_workers[ch_index].done_reading.clear()
+        except Exception:
+            raise
         finally:
             self.log.debug(f"Stack imaging time: {(perf_counter()-start_time)/3600.:.3f} hours.")
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop()
             # self.ni.close()  # do we need this??
             self.cam.stop()
-            # TODO: make sure we pull all the camera images out.
             # TODO: make sure this actually kills the data_logger
             #self.data_logger_worker.stop()
             #self.data_logger_worker.close()
-
-            # Safely close the stack writers that we opened.
-            for channel_name, worker in stack_writer_workers.items():
-                self.log.debug(f"Closing {channel_name}[nm] channel StackWriter.")
+            # Wait for stack writers to finish writing files to disk.
+            for ch_name, worker in stack_writer_workers.items():
+                self.log.debug(f"Closing {ch_name}[nm] channel StackWriter.")
                 worker.join()
-                #worker.close()
-            for channel_name, worker in self.mip_workers.items():
-                self.log.debug(f"Closing {channel_name}[nm] channel Mip Worker.")
-                worker.close()
+            # for ch_name, worker in self.mip_workers.items():
+            #     self.log.debug(f"Closing {ch_name}[nm] channel Mip Worker.")
+            #     worker.close()
 
             # Apply lead-in move to take out z backlash.
             z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
@@ -368,6 +352,13 @@ class Exaspim(Spim):
             #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
             #    with TiffWriter(path, bigtiff=True) as tif:
             #        tif.write(mip_data)
+
+    def _compute_mip_shapes(self, volume_x: float, volume_y: float,
+                            volume_z: float, percent_x_overlap: float,
+                            percent_y_overlap: float):
+        """return three 2-tuples indicating the shapes of the mips."""
+        raise NotImplementedError
+        #xy, xz, yz = (0,0), (0,0), (0,0)
 
     def livestream(self):
         pass

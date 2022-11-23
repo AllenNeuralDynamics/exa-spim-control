@@ -27,7 +27,7 @@ def get_mem_usage():
 
 rows = 10640
 cols = 14192
-num_frames = 500
+num_frames = 100#500
 chunk_size = 32#64
 num_processes = 4
 

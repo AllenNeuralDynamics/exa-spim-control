@@ -40,7 +40,8 @@ class StackWriter(Process):
                  chunk_size: int, thread_count: int, compression_style: str,
                  datatype: str, dest_path: Path, stack_name: str,
                  channel_name: str, viz_color_hex: str):
-        """Setup the StackWriter according to the config.
+        """Setup the StackWriter to write a compressed stack of images to disk
+        as a compressed Imaris file.
 
         :param image_rows: image sensor rows.
         :param image_columns: image sensor columns.
@@ -82,7 +83,8 @@ class StackWriter(Process):
         # Specs for reconstructing the shared memory object.
         self._shm_name = Array(c_wchar, 32)  # hidden and exposed via property.
         self.shm_shape = (self.cols, self.rows, self.chunk_size)
-        self.shm_nbytes = int(np.prod(self.shm_shape, dtype=np.int64)*np.dtype(self.dtype).itemsize)
+        self.shm_nbytes = \
+            int(np.prod(self.shm_shape, dtype=np.int64)*np.dtype(self.dtype).itemsize)
         self.frames = None  # will be replaced with an ndarray from shared mem.
         # Flow control attributes to synchronize inter-process communication.
         self.done_reading = Event()
@@ -104,15 +106,22 @@ class StackWriter(Process):
         self._shm_name[len(name)] = '\x00'  # Null terminate the string.
 
     def run(self):
-        image_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.img_count, c=1, t=1)
+        """Loop to wait for data from a specified location and write it to disk
+        as an Imaris file. Close up the file afterwards.
+
+        This function executes when called with the start() method.
+        """
+        image_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.img_count,
+                                  c=1, t=1)
         dimension_sequence = pw.DimensionSequence('x', 'y', 'z', 'c', 't')
-        block_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.chunk_size, c=1, t=1)
+        block_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.chunk_size,
+                                  c=1, t=1)
         sample_size = pw.ImageSize(x=1, y=1, z=1, c=1, t=1)
         # Create Options object.
         opts = pw.Options()
         opts.mNumberOfThreads = self.thread_count
         opts.mEnableLogProgress = True
-        # compression options are limited.
+        # Limit compression options.
         if self.compression_style == 'lz4':
             opts.mCompressionAlgorithmType = pw.eCompressionAlgorithmShuffleLZ4
         elif self.compression_style.upper() == 'None':
@@ -121,10 +130,13 @@ class StackWriter(Process):
         application_name = 'PyImarisWriter'
         application_version = '1.0.0'
 
-        filepath = str((self.dest_path / Path(f"{self.stack_name}.ims")).absolute())
+        filepath = \
+            str((self.dest_path / Path(f"{self.stack_name}.ims")).absolute())
         self.converter = \
-            pw.ImageConverter(self.dtype, image_size, sample_size, dimension_sequence, block_size,
-                              filepath, opts, application_name, application_version, self.callback_class)
+            pw.ImageConverter(self.dtype, image_size, sample_size,
+                              dimension_sequence, block_size, filepath, opts,
+                              application_name, application_version,
+                              self.callback_class)
 
         # Write some dummy data to file.
         chunk_count = ceil(self.img_count/self.chunk_size)
@@ -145,9 +157,7 @@ class StackWriter(Process):
             self.converter.CopyBlock(frames, block_index)
             shm.close()
             self.done_reading.set()
-#        self.close()
-#
-#    def close(self):
+
         # Compute the start/end extremes of the enclosed rectangular solid.
         # (x0, y0, z0) position (in [um]) of the beginning of the first voxel,
         # (xf, yf, zf) position (in [um]) of the end of the last voxel.

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 from math import floor, ceil
 from multiprocessing import Process, Event, Array
 from multiprocessing.shared_memory import SharedMemory
@@ -44,7 +42,7 @@ class SharedDoubleBuffer:
         self.read_buf = np.ndarray(shape, dtype=dtype,
                                    buffer=self.mem_blocks[0].buf)
         self.write_buf = np.ndarray(shape, dtype=dtype,
-                                   buffer=self.mem_blocks[1].buf)
+                                    buffer=self.mem_blocks[1].buf)
         # Attach references to the names of the memory locations.
         self.read_buf_mem_name = self.mem_blocks[0].name
         self.write_buf_mem_name = self.mem_blocks[1].name
@@ -57,6 +55,8 @@ class SharedDoubleBuffer:
         self.is_read.clear()
 
     def toggle_buffers(self):
+        """Switch read and write references and the locations of their shared
+        memory."""
         # Toggle who acts as read buf and write buf.
         tmp = self.read_buf
         self.read_buf = self.write_buf
@@ -67,6 +67,11 @@ class SharedDoubleBuffer:
         self.write_buf_mem_name = tmp
 
     def close_and_unlink(self):
+        """Shared memory cleanup; call when done using this object."""
         for mem in self.mem_blocks:
             mem.close()
             mem.unlink()
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        """Cleanup called automatically if opened using a `with` statement."""
+        self.close_and_unlink()
