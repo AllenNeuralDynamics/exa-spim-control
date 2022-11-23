@@ -22,6 +22,9 @@ from tigerasi.sim_tiger_controller import TigerController as SimTiger
 from mesospim.spim_base import Spim
 from mesospim.devices.tiger_components import SamplePose
 
+# Constants
+IMARIS_TIMEOUT_S = 60.
+
 
 class Exaspim(Spim):
 
@@ -186,7 +189,7 @@ class Exaspim(Spim):
                                           stack_prefix, img_storage_dir,
                                           deriv_storage_dir)
                 # Start transferring tiff file to its destination.
-                # Note: Image transfer is faster than image capture.
+                # Note: Image transfer should be faster than image capture,
                 #   but we still wait for prior process to finish.
                 if stack_transfer_workers:
                     self.log.info("Waiting for stack transfer processes "
@@ -210,6 +213,15 @@ class Exaspim(Spim):
                 # TODO: mip transfer processes.
                 self.stage_x_pos += y_grid_step_um * UM_TO_STEPS
             self.stage_y_pos += self.cfg.z_step_size_um * UM_TO_STEPS
+        # Acquisition cleanup.
+        # Write MIPs to files.
+        # TODO: do this outside of this function.
+        # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
+        # for ch, mip_data in mips.items():
+        #    path = deriv_storage_dir/Path(f"{stack_prefix}_{ch}_mip.tiff")
+        #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
+        #    with TiffWriter(path, bigtiff=True) as tif:
+        #        tif.write(mip_data)
 
     def _collect_tile_stacks(self, channels: list[int], frame_count: int,
                              chunk_size: int, stack_prefix: str,
@@ -233,7 +245,6 @@ class Exaspim(Spim):
         """
         stack_writer_workers = {}  # writes img chunks to a stack on disk.
         img_buffers = {}  # Shared double buffers for acquisition and compression.
-        mips = {}  # TODO: this should be an external process.
         tile_names = {}
         # Flow Control flags.
         stack_capture_complete = False
@@ -250,9 +261,8 @@ class Exaspim(Spim):
         for ch in channels:
             tile_names[ch] = f"{stack_prefix}_{ch}"
             # Note: a stack of 64 frames is ~18[GB] in memory.
-            # TODO: shape should be
+            # TODO: adjust imaris to handle different shape.
             img_buffers[ch] = SharedDoubleBuffer(mem_shape, dtype=self.cfg.datatype)
-            mips[ch] = np.zeros(mem_shape[:2], dtype=self.cfg.datatype)  # should be an external process.
             # Create/Configure per-channel processes.
             self.log.debug(f"Creating StackWriter for {ch}[nm] channel.")
             stack_writer_workers[ch] = \
@@ -268,13 +278,11 @@ class Exaspim(Spim):
                             tile_names[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
             stack_writer_workers[ch].start()
-            self.mip_workers[ch] = MIPProcessor()  # has no configure()
         # data_logger is for the camera. It needs to exist between:
         #   cam.start() and cam.stop()
         #self.data_logger_worker = DataLogger(self.deriv_storage_dir,
         #                                     self.cfg.memento_path,
         #                                     f"{stack_prefix}_log")
-
         # For speed, data is transferred in chunks of a specific size.
         start_time = perf_counter()
         try:
@@ -323,32 +331,22 @@ class Exaspim(Spim):
             self.ni.stop()
             # self.ni.close()  # do we need this??
             self.cam.stop()
-            # TODO: make sure this actually kills the data_logger
             #self.data_logger_worker.stop()
             #self.data_logger_worker.close()
             # Wait for stack writers to finish writing files to disk.
-            timeout = None if stack_capture_complete else 60
+            timeout = None if stack_capture_complete else IMARIS_TIMEOUT_S
             for ch_name, worker in stack_writer_workers.items():
                 self.log.debug(f"Closing {ch_name}[nm] channel StackWriter.")
                 worker.join(timeout=timeout)
-            # for ch_name, worker in self.mip_workers.items():
-            #     self.log.debug(f"Closing {ch_name}[nm] channel Mip Worker.")
-            #     worker.close()
-
+            self.log.debug("Deallocating shared memory.")
+            for ch_name, buf in img_buffers.items():
+                buf.close_and_unlink()
+            # Leave the sample in the starting position.
             # Apply lead-in move to take out z backlash.
             z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
             self.log.debug("Applying extra move to take out backlash.")
             self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
             self.sample_pose.move_absolute(z=0, wait=True)
-
-            # Write MIPs to files.
-            # TODO: do this outside of this function.
-            # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
-            #for ch, mip_data in mips.items():
-            #    path = deriv_storage_dir/Path(f"{stack_prefix}_{ch}_mip.tiff")
-            #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
-            #    with TiffWriter(path, bigtiff=True) as tif:
-            #        tif.write(mip_data)
 
     def _compute_mip_shapes(self, volume_x: float, volume_y: float,
                             volume_z: float, percent_x_overlap: float,

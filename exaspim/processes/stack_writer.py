@@ -17,17 +17,15 @@ class ImarisProgressChecker(pw.CallbackClass):
 
     def __init__(self, stack_name):
         self.stack_name = stack_name
-        self.mUserDataProgress = 0
-        self.progress = 0  # a float representing the progress.
+        self.progress = 0  # a float representing the progress (0 to 1.0).
 
     def RecordProgress(self, progress, total_bytes_written):
         self.progress = progress
-        progress100 = int(progress * 100)
-        if progress100 - self.mUserDataProgress >= 25:
-            self.mUserDataProgress = progress100
-            print(f"{self.mUserDataProgress}% Complete; "
-                  f"{total_bytes_written/1.0e9:.3f} GB written for "
-                  f"{self.stack_name}.ims.")
+        # progress100 = int(progress * 100)
+        # if progress100 - self.mUserDataProgress >= 25:
+        #     print(f"{self.mUserDataProgress}% Complete; "
+        #           f"{total_bytes_written/1.0e9:.3f} GB written for "
+        #           f"{self.stack_name}.ims.")
 
 
 class StackWriter(Process):
@@ -70,7 +68,7 @@ class StackWriter(Process):
         self.pixel_x_size_um = pixel_x_size_um
         self.pixel_y_size_um = pixel_y_size_um
         self.pixel_z_size_um = pixel_z_size_um
-        # metatdata to write to the file before closing it.
+        # metadata to write to the file before closing it.
         self.channel_name = channel_name
         self.chunk_size = chunk_size
         self.thread_count = thread_count
@@ -157,11 +155,10 @@ class StackWriter(Process):
             self.converter.CopyBlock(frames, block_index)
             shm.close()
             self.done_reading.set()
-
+        # Compression cleanup:
         # Compute the start/end extremes of the enclosed rectangular solid.
         # (x0, y0, z0) position (in [um]) of the beginning of the first voxel,
         # (xf, yf, zf) position (in [um]) of the end of the last voxel.
-
         #x0 = self.cols * self.pixel_x_size_um * (y_tile) * (1 - self.cfg.y_overlap / 100)
         #y0 = self.rows * self.pixel_y_size_um * (z_tile) * (1 - self.cfg.z_overlap / 100)
         x0 = self.first_img_centroid_x_um - (self.pixel_x_size_um * 0.5 * self.cols)
@@ -176,16 +173,15 @@ class StackWriter(Process):
 
         # Wait for file writing to finish.
         if self.callback_class.progress < 1.0:
-            print(f"Waiting for Data writing to complete for "
-                  f"channel {self.channel_name}[nm] channel."
-                  f"Progress is {self.callback_class.progress:.3f}.")
+            print(f"Ch{self.channel_name} Waiting for data writing to complete for "
+                  f"channel {self.channel_name}[nm] channel. "
+                  f"Current progress is {self.callback_class.progress:.3f}.")
         while self.callback_class.progress < 1.0:
             sleep(1.0)
-            print(f"Waiting for Data writing to complete for "
+            print(f"Ch{self.channel_name} Waiting for data writing to complete for "
                   f"channel {self.channel_name}[nm] channel."
-                  f"Progress is {self.callback_class.progress:.3f}.")
-
-        print("Writing image extents and closing file.")
+                  f"Current progress is {self.callback_class.progress:.3f}.")
+        print(f"Ch{self.channel_name} Writing image extents and closing file.")
         image_extents = pw.ImageExtents(-x0, -y0, -z0, -xf, -yf, -zf)
         adjust_color_range = False
         parameters = pw.Parameters()
