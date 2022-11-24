@@ -1,11 +1,6 @@
-from math import floor, ceil
 from multiprocessing import Process, Event, Array
 from multiprocessing.shared_memory import SharedMemory
-from ctypes import c_wchar
-from PyImarisWriter import PyImarisWriter as pw
-from time import sleep
 import numpy as np
-from datetime import datetime
 
 
 class SharedDoubleBuffer:

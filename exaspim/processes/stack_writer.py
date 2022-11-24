@@ -1,5 +1,4 @@
 import numpy as np
-from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
 from multiprocessing import Process, Array, Event
 from multiprocessing.shared_memory import SharedMemory
 from ctypes import c_wchar
@@ -8,7 +7,7 @@ from pathlib import Path
 from datetime import datetime
 from matplotlib.colors import hex2color
 from time import sleep
-from math import floor, ceil
+from math import ceil
 
 
 class ImarisProgressChecker(pw.CallbackClass):
@@ -54,7 +53,8 @@ class StackWriter(Process):
         :param compression_style: compression algorithm to use on the images.
         :param datatype: string representation of the image datatype.
         :param dest_path: the filepath to write the image stack to.
-        :param stack_name: file name without the .ims extension.
+        :param stack_name: file name with or without the .ims extension. If the
+            .ims extension is not present, it will be appended to the file.
         :param channel_name: name of the channel as it appears in the file.
         :param viz_color_hex: color (as a hex string) for the file signal data.
         """
@@ -75,7 +75,8 @@ class StackWriter(Process):
         self.compression_style = compression_style
         self.dtype = datatype
         self.dest_path = dest_path
-        self.stack_name = stack_name
+        self.stack_name = stack_name \
+            if stack_name.endswith(".ims") else f"{stack_name}.ims"
         self.hex_color = viz_color_hex
         self.converter = None
         # Specs for reconstructing the shared memory object.
@@ -111,7 +112,9 @@ class StackWriter(Process):
         """
         image_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.img_count,
                                   c=1, t=1)
+        # c = channel, t = time. These fields are unused for now.
         dimension_sequence = pw.DimensionSequence('x', 'y', 'z', 'c', 't')
+        #dimension_sequence = pw.DimensionSequence('z', 'y', 'x', 'c', 't')
         block_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.chunk_size,
                                   c=1, t=1)
         sample_size = pw.ImageSize(x=1, y=1, z=1, c=1, t=1)
@@ -128,18 +131,14 @@ class StackWriter(Process):
         application_name = 'PyImarisWriter'
         application_version = '1.0.0'
 
-        filepath = \
-            str((self.dest_path / Path(f"{self.stack_name}.ims")).absolute())
+        filepath = str((self.dest_path/Path(f"{self.stack_name}")).absolute())
         self.converter = \
             pw.ImageConverter(self.dtype, image_size, sample_size,
                               dimension_sequence, block_size, filepath, opts,
                               application_name, application_version,
                               self.callback_class)
 
-        # Write some dummy data to file.
         chunk_count = ceil(self.img_count/self.chunk_size)
-        last_chunk_size = self.img_count % self.chunk_size
-        last_chunk = chunk_count - 1
         for chunk_num in range(chunk_count):
             block_index = pw.ImageSize(x=0, y=0, z=chunk_num, c=0, t=0)
             # Wait for new data.
