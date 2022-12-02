@@ -1,6 +1,9 @@
 import numpy
 from egrabber import *
 
+# TODO: incorporate Memento datalogger.
+#from exaspim.processes.data_logger import DataLogger
+
 
 class Camera:
 
@@ -8,6 +11,7 @@ class Camera:
 
 		self.gentl = EGenTL() # instantiate egentl
 		self.grabber = EGrabber(self.gentl) # instantiate egrabber
+		#self.data_logger_worker = None  # Memento img acquisition data logger.
 
 	def configure(self, cfg):
 
@@ -21,11 +25,21 @@ class Camera:
 			self.grabber.remote.set("TriggerMode", "On") 
 		self.grabber.remote.set("Gain", self.cfg.digital_gain) # set digital gain to 1
 
+		# TODO: put the datalogger here.
+		# data_logger is for the camera. It needs to exist between:
+		#   cam.start() and cam.stop()
+		# data_logger_worker = DataLogger(self.deriv_storage_dir,
+		#                                 self.cfg.memento_path,
+		#                                 f"{stack_prefix}_log")
+
+
 	def start(self, live=False):
 
 		if live:
 			self.grabber.start()
 		else:
+			# TODO: data logger needs to block until it is ready.
+			# self.data_logger_worker.start()
 			self.grabber.start(self.cfg.n_frames*self.cfg.n_channels)
 
 	def grab_frame(self):
@@ -42,6 +56,8 @@ class Camera:
 	def stop(self):
 
 		self.grabber.stop()
+		# self.data_logger_worker.stop()
+		# self.data_logger_worker.close()
 
 	def print_statistics(self, ch):
 

@@ -6,7 +6,7 @@ from PyImarisWriter import PyImarisWriter as pw
 from pathlib import Path
 from datetime import datetime
 from matplotlib.colors import hex2color
-from time import sleep
+from time import sleep, perf_counter
 from math import ceil
 
 
@@ -30,11 +30,14 @@ class ImarisProgressChecker(pw.CallbackClass):
 class StackWriter(Process):
     """Class for writing a stack of frames to a file on disk."""
 
-    def __init__(self, image_rows: int, image_columns: int, image_count: int,
+    def __init__(self,
+                 image_rows: int, image_columns: int, image_count: int,
                  first_img_centroid_x: float, first_img_centroid_y: float,
                  pixel_x_size_um: float, pixel_y_size_um: float,
                  pixel_z_size_um: float,
-                 chunk_size: int, thread_count: int, compression_style: str,
+                 chunk_size: int,
+                 chunk_dimension_order: tuple,
+                 thread_count: int, compression_style: str,
                  datatype: str, dest_path: Path, stack_name: str,
                  channel_name: str, viz_color_hex: str):
         """Setup the StackWriter to write a compressed stack of images to disk
@@ -49,6 +52,8 @@ class StackWriter(Process):
         :param pixel_y_size_um:
         :param pixel_z_size_um:
         :param chunk_size: size of the chunk.
+        :param chunk_dimension_order: tuple of lowercase lettered axes denoting
+            the dimension order.
         :param thread_count: number of threads to split this operation across.
         :param compression_style: compression algorithm to use on the images.
         :param datatype: string representation of the image datatype.
@@ -59,6 +64,11 @@ class StackWriter(Process):
         :param viz_color_hex: color (as a hex string) for the file signal data.
         """
         super().__init__()
+        # Lookups for deducing order.
+        self.dim_map = {'x': 0, 'y': 1, 'z': 2, 'c': 3, 't': 4}
+        chunk_shape_map = {'x': image_columns,
+                           'y': image_rows,
+                           'z': chunk_size}
         # metadata to create the file.
         self.cols = image_columns
         self.rows = image_rows
@@ -71,6 +81,7 @@ class StackWriter(Process):
         # metadata to write to the file before closing it.
         self.channel_name = channel_name
         self.chunk_size = chunk_size
+        self.chunk_dim_order = chunk_dimension_order
         self.thread_count = thread_count
         self.compression_style = compression_style
         self.dtype = datatype
@@ -81,7 +92,8 @@ class StackWriter(Process):
         self.converter = None
         # Specs for reconstructing the shared memory object.
         self._shm_name = Array(c_wchar, 32)  # hidden and exposed via property.
-        self.shm_shape = (self.cols, self.rows, self.chunk_size)
+        # This is almost always going to be: (chunk_size, rows, columns).
+        self.shm_shape = [chunk_shape_map[x] for x in self.chunk_dim_order]
         self.shm_nbytes = \
             int(np.prod(self.shm_shape, dtype=np.int64)*np.dtype(self.dtype).itemsize)
         self.frames = None  # will be replaced with an ndarray from shared mem.
@@ -113,8 +125,12 @@ class StackWriter(Process):
         image_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.img_count,
                                   c=1, t=1)
         # c = channel, t = time. These fields are unused for now.
+        # Note: ImarisWriter performs MUCH faster when the dimension sequence
+        #   is arranged: x, y, z, c, t.
+        #   It is more efficient to transpose/reshape the data into this
+        #   shape beforehand instead of defining an arbitrary
+        #   DimensionSequence and passing the chunk data in as-is.
         dimension_sequence = pw.DimensionSequence('x', 'y', 'z', 'c', 't')
-        #dimension_sequence = pw.DimensionSequence('z', 'y', 'x', 'c', 't')
         block_size = pw.ImageSize(x=self.cols, y=self.rows, z=self.chunk_size,
                                   c=1, t=1)
         sample_size = pw.ImageSize(x=1, y=1, z=1, c=1, t=1)
@@ -149,9 +165,10 @@ class StackWriter(Process):
             frames = np.ndarray(self.shm_shape, self.dtype, buffer=shm.buf)
             print(f"Ch{self.channel_name} writing chunk "
                   f"{chunk_num+1}/{chunk_count} of size {frames.shape}.")
-            # TODO: do we need this?
-            #self.converter.CopyBlock(np.transpose(frames, (2, 1, 0)), block_index)
-            self.converter.CopyBlock(frames, block_index)
+            start_time = perf_counter()
+            dim_order = [self.dim_map[x] for x in self.chunk_dim_order]
+            self.converter.CopyBlock(frames.transpose(dim_order), block_index)
+            print(f"copyblock took {perf_counter() - start_time:.3f}[s].")
             shm.close()
             self.done_reading.set()
         # Compression cleanup:

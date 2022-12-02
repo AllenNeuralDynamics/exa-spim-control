@@ -6,7 +6,6 @@ from math import ceil
 from pathlib import Path
 from psutil import virtual_memory
 from time import perf_counter, sleep
-from tifffile import TiffWriter
 from mock import NonCallableMock as Mock
 from exaspim.exaspim_config import ExaspimConfig
 from exaspim.devices.camera import Camera
@@ -14,11 +13,9 @@ from exaspim.devices.waveform_generator import NI
 from exaspim.processes.mip_processor import MIPProcessor
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
-from exaspim.processes.data_logger import DataLogger
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
 from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
 from tigerasi.sim_tiger_controller import TigerController as SimTiger
-# TODO: consolodate these later.
 from mesospim.spim_base import Spim
 from mesospim.devices.tiger_components import SamplePose
 
@@ -29,16 +26,13 @@ IMARIS_TIMEOUT_S = 0.1
 class Exaspim(Spim):
 
     def __init__(self, config_filepath: str, simulated: bool = False):
-
         super().__init__(config_filepath, simulated)
         self.cfg = ExaspimConfig(config_filepath)
         # Separate Processes. Note: most of these are per-channel.
-        self.data_logger_worker = None  # Memento img acquisition data logger.
-        self.stack_writer_workers = {}  # write img chunks to a stack on disk.
         self.mip_workers = {}  # aggregates xy, xy, yz MIPs from frames.
         # Hardware
         self.cam = Camera() if not self.simulated else Mock(Camera)
-        self.ni = NI() if not self.simulated else Mock(NI)
+        self.ni = NI(self.cfg) if not self.simulated else Mock(NI)
         self.etl = None
         self.gavlo_a = None
         self.gavlo_b = None
@@ -53,12 +47,6 @@ class Exaspim(Spim):
         self.total_tiles = 0  # tiles to be captured.
         self.stage_x_pos = None
         self.stage_y_pos = None
-
-        # TODO: consider SharedMemory double buffer for working with MIPS
-        #   and Imaris Writer data compressor in another process.
-        # TODO: do the minimum (ideally zero) number of image transformations
-        #   before handing them off to Imaris Writer.
-
         # Setup hardware according to the config.
         self._setup_motion_stage()
         self._setup_camera()
@@ -85,7 +73,7 @@ class Exaspim(Spim):
         """provision the daq according to the dataset we are going to collect."""
         pass
 
-    def check_system_memory_resources(self, channel_count: int,
+    def _check_system_memory_resources(self, channel_count: int,
                                       mem_chunk: int):
         """Make sure this machine can image under the specified configuration.
 
@@ -133,14 +121,12 @@ class Exaspim(Spim):
                                  local_storage_dir: Path = Path("."),
                                  img_storage_dir: Path = None,
                                  deriv_storage_dir: Path = None):
-        """Collect a tiled volumetric image with specified size/overlap specs.
-
-        """
+        """Collect a volumetric image with specified size/overlap specs."""
         # Memory checks.
         chunk_size = self.cfg.compressor_chunk_size \
             if compressor_chunk_size is None else compressor_chunk_size
         try:  # Ensure we have enough memory for the allocated chunk size.
-            self.check_system_memory_resources(len(channels), chunk_size)
+            self._check_system_memory_resources(len(channels), chunk_size)
         except MemoryError as e:
             self.log.error(e)
             raise
@@ -166,9 +152,12 @@ class Exaspim(Spim):
         output_filenames = {}  # {<channel_name>: <filename_of_stack>}
         self.image_index = 0  # Reset image index.
         start_time = perf_counter()  # For logging total time.
+        self.ni.configure(frame_count=len(channels) * ztiles)
         # Reset the starting location.
         self.sample_pose.zero_in_place()
         self.stage_x_pos, self.stage_y_pos = (0, 0)
+        # FIXME: how do we configure the tigerbox to step in a fixed size
+        #   according to the NI card?
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
@@ -184,11 +173,9 @@ class Exaspim(Spim):
                               f"{self.stage_y_pos:.3f}[um])")
                 stack_prefix = f"{tile_prefix}_" \
                                f"{self.stage_x_pos}_{self.stage_y_pos}"
-                # TODO: filename conventions across these functions must match.
                 output_filenames = \
-                    self._collect_tile_stacks(channels, ztiles, chunk_size,
-                                              stack_prefix, img_storage_dir,
-                                              deriv_storage_dir)
+                    self._collect_zstacks(channels, ztiles, chunk_size,
+                                          stack_prefix)
                 # Start transferring tiff file to its destination.
                 # Note: Image transfer should be faster than image capture,
                 #   but we still wait for prior process to finish.
@@ -222,20 +209,23 @@ class Exaspim(Spim):
         #    with TiffWriter(path, bigtiff=True) as tif:
         #        tif.write(mip_data)
 
-    def _collect_tile_stacks(self, channels: list[int], frame_count: int,
-                             chunk_size: int, stack_prefix: str,
-                             image_storage_dir: Path,
-                             deriv_storage_dir: Path):
+    def _collect_zstacks(self, channels: list[int], frame_count: int,
+                         chunk_size: int, stack_prefix: str):
         """Collect tile stack for every specified channel and write them to
         disk compressed through ImarisWriter.
 
         The DAQ is already configured to play each laser and then move the
-        stage for a specified amount of frames. This func simply collects all
-        the images and then sends them to an external process (in chunks at a
-        time) to compress them online and write them to disk.
+        stage for a specified amount of frames. This func simply deserializes
+        all the incoming images into separate channels, buffers them into
+        chunks, and then sends them to ImarisWriter in an external process
+        (in chunks at a time) to compress them online and write them to disk.
 
-        Since a single image can be ~300[MB], a stack of frames can
-        easily be gigabytes.
+        ImarisWriter operates fastest when operating on larger chunks at once.
+        We allocate shared memory to hold space for 2 chunks per channel, one
+        to write to, and one for ImarisWriter to compress in parallel.
+
+        Note: Since a single image can be ~300[MB], a stack of frames can
+        easily be tens of gigabytes.
 
         :param channels: a list of channels
         :param frame_count: number of frames to collect into a stack.
@@ -245,32 +235,32 @@ class Exaspim(Spim):
         :return: dict, keyed by channel name, of the filenames written to disk.
         """
         stack_writer_workers = {}  # writes img chunks to a stack on disk.
-        img_buffers = {}  # Shared double buffers for acquisition and compression.
+        img_buffers = {}  # Shared double buffers for acquisition & compression.
         stack_names = {}
         # Flow Control flags.
-        stack_capture_complete = False
+        capture_successful = False
         # Put the backlash into a known state.
         stage_z_pos = 0
         z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
         self.log.debug("Applying extra move to take out backlash.")
-        self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
-        self.sample_pose.move_absolute(z=stage_z_pos, wait=True)
-        self.sample_pose.move_absolute(z=round(stage_z_pos), wait=True)
+        self.sample_pose.move_absolute(z=round(z_backup_pos))
+        self.sample_pose.move_absolute(z=stage_z_pos)
+        self.sample_pose.move_absolute(z=round(stage_z_pos))
         self.setup_imaging_hardware()
-        mem_shape = (self.cfg.sensor_column_count, self.cfg.sensor_row_count,
-                     chunk_size)
 
         def all_stack_workers_idle():
             """Helper function. True if all StackWriters are idle."""
             return all([w.done_reading.is_set()
                         for _, w in stack_writer_workers.items()])
 
+        # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
-            # TODO: consider making the stack extension configurable.
             stack_names[ch] = f"{stack_prefix}_{ch}.ims"
-            # Note: a stack of 64 frames is ~18[GB] in memory.
-            # TODO: adjust imaris file format to handle different shape.
+            mem_shape = (chunk_size,
+                         self.cfg.sensor_row_count,
+                         self.cfg.sensor_column_count)
             img_buffers[ch] = SharedDoubleBuffer(mem_shape, dtype=self.cfg.datatype)
+            chunk_dim_order = ('z', 'y', 'x')  # must agree with mem_shape
             self.log.debug(f"Creating StackWriter for {ch}[nm] channel.")
             stack_writer_workers[ch] = \
                 StackWriter(self.cfg.sensor_row_count,
@@ -279,46 +269,30 @@ class Exaspim(Spim):
                             self.cfg.x_voxel_size_um, self.cfg.y_voxel_size_um,
                             self.cfg.z_step_size_um,
                             self.cfg.compressor_chunk_size,
+                            chunk_dim_order,
                             self.cfg.compressor_thread_count,
                             self.cfg.compressor_style,
                             self.cfg.datatype, self.img_storage_dir,
                             stack_names[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
             stack_writer_workers[ch].start()
-        # data_logger is for the camera. It needs to exist between:
-        #   cam.start() and cam.stop()
-        #self.data_logger_worker = DataLogger(self.deriv_storage_dir,
-        #                                     self.cfg.memento_path,
-        #                                     f"{stack_prefix}_log")
-        # For speed, data is transferred in chunks of a specific size.
         start_time = perf_counter()
         try:
-            # TODO: wait for data_logger to start before starting camera.
-            #self.data_logger_worker.start()
-            self.cam.start(live=False)
+            self.cam.start(live=False)  # TODO: rewrite to block until ready.
             self.ni.start()
-            # We assume images arrive serialized in repeating channel order.
+            # Images arrive serialized in repeating channel order.
             last_frame_index = frame_count - 1
             for frame_index in range(frame_count):
                 chunk_index = frame_index % chunk_size
-                # Deserialize camera input into corresponding channel. i.e:
-                # grab one tile per channel before moving onto the next tile.
+                # Deserialize camera input into corresponding channel.
                 for ch_index in channels:
                     self.log.debug(f"Grabbing frame {frame_index} for "
                                    f"{ch_index}[nm] channel.")
-                    # if self.simulated:
-                    #     sleep(1/6.4)
-                    # TODO: don't do any reshaping if possible.
-                    # Ideally, we want: (chunk_size, y_size, x_size)
-                    img_buffers[ch_index].write_buf[:, :, chunk_index] = \
-                        np.zeros((self.cfg.sensor_column_count,
-                                  self.cfg.sensor_row_count),
-                                 dtype=self.cfg.image_dtype)
-                        #np.transpose(self.cam.grab_frame())
+                    img_buffers[ch_index].write_buf[chunk_index] = \
+                        self.cam.grab_frame()
                 self.image_index += 1
-                # Dispatch chunk if we have aggregated a full chunk of frames.
-                # OR if we are dispatching the last chunk, and it's not a
-                # multiple of the chunk.
+                # Dispatch either a full chunk of frames or the last chunk,
+                # which may not be a multiple of the chunk size.
                 if chunk_index == chunk_size - 1 or frame_index == last_frame_index:
                     # Wait for z stack writing to finish before dispatching
                     # more data.
@@ -328,15 +302,16 @@ class Exaspim(Spim):
                                        f"compressed to disk.")
                     while not all_stack_workers_idle():
                         sleep(0.001)
-                    # Dispatch chunk to each stack-writing compression process.
+                    # Dispatch chunk to each StackWriter compression process.
                     # Toggle double buffer to continue writing images.
+                    # To read the new data, the StackWriter needs the updated
+                    # name of the memory location and a trigger to start.
                     for ch_index in channels:
                         img_buffers[ch_index].toggle_buffers()
-                        # Send over the read buffer shm name.
                         stack_writer_workers[ch_index].shm_name = \
                             img_buffers[ch_index].read_buf_mem_name
                         stack_writer_workers[ch_index].done_reading.clear()
-            stack_capture_complete = True
+            capture_successful = True
         except Exception:
             traceback.print_exc()
             raise
@@ -345,17 +320,15 @@ class Exaspim(Spim):
                            f"{(perf_counter()-start_time)/3600.:.3f} hours.")
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop()
-            # self.ni.close()  # do we need this??
+            self.ni.close()  # TODO: do we need this??
             self.cam.stop()
-            #self.data_logger_worker.stop()
-            #self.data_logger_worker.close()
             # Wait for stack writers to finish writing files to disk if capture
             # was successful.
-            timeout = None if stack_capture_complete else IMARIS_TIMEOUT_S
+            timeout = None if capture_successful else IMARIS_TIMEOUT_S
             for ch_name, worker in stack_writer_workers.items():
-                force = "Force " if not stack_capture_complete else ""
+                force = "Force " if not capture_successful else ""
                 msg = f"{force}Closing {ch_name}[nm] channel StackWriter."
-                if stack_capture_complete:
+                if capture_successful:
                     self.log.debug(msg)
                 else:
                     self.log.warning(msg)
@@ -367,8 +340,8 @@ class Exaspim(Spim):
             # Apply lead-in move to take out z backlash.
             z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
             self.log.debug("Applying extra move to take out backlash.")
-            self.sample_pose.move_absolute(z=round(z_backup_pos), wait=True)
-            self.sample_pose.move_absolute(z=0, wait=True)
+            self.sample_pose.move_absolute(z=round(z_backup_pos))
+            self.sample_pose.move_absolute(z=0)
         return stack_names
 
     def _compute_mip_shapes(self, volume_x: float, volume_y: float,

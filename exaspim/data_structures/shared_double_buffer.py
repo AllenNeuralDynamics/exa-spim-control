@@ -26,7 +26,7 @@ class SharedDoubleBuffer:
             dbl_buf.toggle_buffers() # read_buf and write_buf have switched places.
 
         """
-        # Overflow errors without casting for sufficiently larg datasets
+        # Overflow errors without casting for large datasets
         nbytes = int(np.prod(shape, dtype=np.int64)*np.dtype(dtype).itemsize)
         self.mem_blocks = \
             [

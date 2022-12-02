@@ -96,16 +96,23 @@ def generate_waveforms(cfg, plot=False):
 
 class NI:
 
-	def __init__(self):
-
+	# TODO: separate cfg dependency. Pass everything in here as a parameter.
+	def __init__(self, cfg):
+		self.cfg = cfg
 		self.co_task = None
 		self.ao_task = None
 		self.daq_samples = 0
 
-	# TODO: separate cfg dependency. Pass everything in here as a parameter.
-	def configure(self, cfg, live=False):
-		self.cfg = cfg
+	def configure(self, frame_count: int = None, live: bool = False):
+		"""Configure the NI card to play either `frame_count` frames or
+		continuously.
 
+		:param frame_count: the number of frames to play waveforms for. If
+			left unspecified, `live` must be true.
+		:param live: if True, play the waveforms indefinitely. `frame_count`
+			must be left unspecified in this case. Otherwise, play the
+			waveforms for the specified `frame_count`.
+		"""
 		# total samples is the sum of the samples for every used laser channel.
 		samples = 0
 		for ch in self.cfg.channels:
@@ -123,7 +130,7 @@ class NI:
 		
 		self.co_task.timing.cfg_implicit_timing(
 			sample_mode=AcqType.CONTINUOUS if live else AcqType.FINITE,
-			samps_per_chan=self.cfg.n_frames)
+			samps_per_chan=frame_count)
 
 		# TODO: this should be in the config.
 		self.co_task.co_pulse_term = '/Dev1/PFI0'
