@@ -32,9 +32,7 @@ class Camera:
 		#                                 self.cfg.memento_path,
 		#                                 f"{stack_prefix}_log")
 
-
 	def start(self, live=False):
-
 		if live:
 			self.grabber.start()
 		else:
@@ -52,6 +50,17 @@ class Camera:
 		buffer.push()
 
 		return image
+
+	# TODO: does this even work??
+	# 	Should we just announce-and-queue a bunch of frames in advance?
+	def grab_frame_to_mem(self, buf: memoryview):
+		img_mem = UserMemory(buf)
+		self.grabber.announce_and_queue(img_mem)
+		recv_buf = Buffer(self.grabber, timeout=int(1.0e7))  # blocks until new data arrives?
+		del recv_buf
+		del img_mem
+
+
 
 	def stop(self):
 
