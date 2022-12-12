@@ -1,6 +1,5 @@
 import nidaqmx
-import time
-import numpy
+import numpy as np
 import matplotlib.pyplot as plt
 from nidaqmx.constants import FrequencyUnits as Freq
 from nidaqmx.constants import Level
@@ -35,43 +34,43 @@ def generate_waveforms(cfg, plot=False):
 	for ch in cfg.channels:
 		# Create samples arrays for various relevant timings
 		camera_exposure_samples = int(cfg.rate * cfg.camera_exposure_time)
-		camera_delay_samples = int(cfg.rate * cfg.camera_delay_time[ch])
-		etl_buffer_samples = int(cfg.rate * cfg.etl_buffer_time[ch])
-		laser_buffer_samples = int(cfg.rate * cfg.laser_buffer_time[ch])
+		camera_delay_samples = int(cfg.rate * cfg.get_camera_delay_time(ch))
+		etl_buffer_samples = int(cfg.rate * cfg.get_etl_buffer_time(ch))
+		laser_buffer_samples = int(cfg.rate * cfg.get_laser_buffer_time(ch))
 		rest_samples = int(cfg.rate * cfg.rest_time)
 		dwell_time_samples = int(cfg.rate * cfg.dwell_time)
 		pulse_samples = int(cfg.rate * cfg.pulse_time)
 		total_samples = camera_exposure_samples + etl_buffer_samples + rest_samples
 
-		voltages_t[ch] = numpy.zeros((len(cfg.n2c), total_samples))  # TODO fix this from being hardcoded to 4
+		voltages_t[ch] = np.zeros((len(cfg.n2c), total_samples))  # TODO fix this from being hardcoded to 4
 
 		# Generate ETL signal
-		t_etl = numpy.linspace(0, cfg.camera_exposure_time + cfg.etl_buffer_time[ch],
+		t_etl = np.linspace(0, cfg.camera_exposure_time + cfg.get_etl_buffer_time(ch),
 							   camera_exposure_samples + etl_buffer_samples, endpoint=False)
-		voltages_etl = -cfg.etl_amplitude[ch] * signal.sawtooth(
-			2 * numpy.pi / (cfg.camera_exposure_time + cfg.etl_buffer_time[ch]) * t_etl, width=1.0) + cfg.etl_offset[ch]
+		voltages_etl = -cfg.get_etl_amplitude(ch) * signal.sawtooth(
+			2 * np.pi / (cfg.camera_exposure_time + cfg.get_etl_buffer_time(ch)) * t_etl, width=1.0) + cfg.get_etl_offset(ch)
 		t0 = t_etl[0]
-		t1 = t_etl[int((camera_exposure_samples + etl_buffer_samples) * cfg.etl_interp_time[ch])]
+		t1 = t_etl[int((camera_exposure_samples + etl_buffer_samples) * cfg.get_etl_interp_time(ch))]
 		tf = t_etl[-1]
 		v0 = voltages_etl[0]
-		v1 = voltages_etl[int((camera_exposure_samples + etl_buffer_samples) * cfg.etl_interp_time[ch])] + cfg.etl_nonlinear[ch]
+		v1 = voltages_etl[int((camera_exposure_samples + etl_buffer_samples) * cfg.get_etl_interp_time(ch))] + cfg.get_etl_nonlinear(ch)
 		vf = voltages_etl[-1]
 		f = interpolate.interp1d([t0, t1, tf], [v0, v1, vf], kind='quadratic')
 		voltages_etl = f(t_etl)
 
 		voltages_t[ch][cfg.n2c['etl'],
 		0:camera_exposure_samples + etl_buffer_samples] = voltages_etl  # write in ETL sawtooth
-		voltages_t[ch][cfg.n2c['etl'], camera_exposure_samples + etl_buffer_samples::] = cfg.etl_offset[ch] + cfg.etl_amplitude[ch]  # snap back ETL after sawtooth
+		voltages_t[ch][cfg.n2c['etl'], camera_exposure_samples + etl_buffer_samples::] = cfg.get_etl_offset(ch) + cfg.get_etl_amplitude(ch)  # snap back ETL after sawtooth
 		voltages_t[ch][cfg.n2c['etl'],
 		camera_exposure_samples + etl_buffer_samples:camera_exposure_samples + etl_buffer_samples + dwell_time_samples] = \
-			cfg.etl_offset[ch] - cfg.etl_amplitude[ch]  # delay snapback until last row is done exposing
+			cfg.get_etl_offset(ch) - cfg.get_etl_amplitude(ch)  # delay snapback until last row is done exposing
 
 		# Generate camera TTL signal
 		voltages_t[ch][cfg.n2c['camera'], int(etl_buffer_samples / 2.0) + camera_delay_samples:int(
 			etl_buffer_samples / 2.0) + camera_delay_samples + pulse_samples] = 5.0
 
 		# Generate laser TTL signal
-		voltages_t[ch][cfg.n2c[ch],
+		voltages_t[ch][cfg.n2c[str(ch)],  # FIXME: remove n2c or move it into the config.
 		int(etl_buffer_samples / 2.0) - laser_buffer_samples + camera_delay_samples:int(
 			etl_buffer_samples / 2.0) + camera_exposure_samples + dwell_time_samples + camera_delay_samples] = 5.0
 
@@ -81,14 +80,14 @@ def generate_waveforms(cfg, plot=False):
 			camera_exposure_samples + etl_buffer_samples + dwell_time_samples:camera_exposure_samples + etl_buffer_samples + dwell_time_samples + pulse_samples] = 0.0
 
 	# Merge voltage arrays
-	voltages_out = numpy.array([]).reshape((len(cfg.n2c), 0))
+	voltages_out = np.array([]).reshape((len(cfg.n2c), 0))
 	for ch in cfg.channels:
-		voltages_out = numpy.hstack((voltages_out, voltages_t[ch]))
+		voltages_out = np.hstack((voltages_out, voltages_t[ch]))
 
 	if plot:
 		# Total waveform time in sec
 		# FIXME
-		t = numpy.linspace(0, (cfg.daq_num_samples / cfg.rate), cfg.daq_num_samples, endpoint=False)
+		t = np.linspace(0, (cfg.daq_num_samples / cfg.rate), cfg.daq_num_samples, endpoint=False)
 		plot_waveforms_to_pdf(t, voltages_out)
 
 	return voltages_out

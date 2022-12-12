@@ -56,42 +56,6 @@ class ExaspimConfig(SpimConfig):
         # waveform generator settings
         self.dev_name = 'Dev1'                                  # waveform enerator: address
         self.rate = 1e4                                         # unit: Hz
-        self.etl_amplitude =        {
-                                        '488': 0.171,
-                                        '561': 0.171,
-                                        '638': 0.171
-                                    }
-        self.etl_offset =           {
-                                        '488': 2.422,
-                                        '561': 2.422,
-                                        '638': 2.422
-                                    }
-        self.etl_nonlinear =        {
-                                        '488': -0.007,
-                                        '561': -0.007,
-                                        '638': -0.007
-                                    }
-        self.etl_interp_time =      {
-                                        '488': 0.5,
-                                        '561': 0.5,
-                                        '638': 0.5
-                                    }
-
-        self.camera_delay_time =    {
-                                        '488': 0.0/1000.0,
-                                        '561': 0.0/1000.0,
-                                        '638': 0.0/1000.0
-                                    }
-        self.etl_buffer_time =      {
-                                        '488': 50.0/1000.0,
-                                        '561': 50.0/1000.0,
-                                        '638': 50.0/1000.0
-                                    }
-        self.laser_buffer_time =    {
-                                        '488': 1.0/1000.0,
-                                        '561': 1.0/1000.0,
-                                        '638': 1.0/1000.0
-                                    }
 
         self.camera_exposure_time = 15/1000*10640/1000.0        # unit: ms
         self.rest_time =            50.0/1000.0                 # unit: ms
@@ -126,17 +90,27 @@ class ExaspimConfig(SpimConfig):
                + self.get_etl_buffer_time(wavelength) \
                + self.rest_time
 
+    def get_camera_delay_time(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['camera']['delay_time_s']
+
+    def get_etl_amplitude(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['etl']['amplitude']
+
     def get_etl_offset(self, wavelength: int):
-        return self.cfg.channel_specs[str(wavelength)]['etl']['offset']
+        return self.channel_specs[str(wavelength)]['etl']['offset']
 
     def get_etl_nonlinear(self, wavelength: int):
-        return self.cfg.channel_specs[str(wavelength)]['etl']['nonlinear']
+        return self.channel_specs[str(wavelength)]['etl']['nonlinear']
 
     def get_etl_interp_time(self, wavelength: int):
-        return self.cfg.channel_specs[str(wavelength)]['etl']['interp_time']
+        return self.channel_specs[str(wavelength)]['etl']['interp_time_s']
 
     def get_etl_buffer_time(self, wavelength: int):
-        return self.cfg.channel_specs[str(wavelength)]['etl']['buffer_time']
+        return self.channel_specs[str(wavelength)]['etl']['buffer_time_s']
+
+    def get_laser_buffer_time(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['buffer_time_s']
+
     # TODO: add setters for the above.
 
     @property

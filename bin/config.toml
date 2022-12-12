@@ -39,15 +39,18 @@ backlash_reset_distance_um = 4 # [um]
 [waveform_specs]
 start_of_frame_delay = 950e-6 # seconds. Time between external trigger and first hsync.
 
-# Laser Channels
+# Laser Channel specific settings
 [channel_specs.488]
 driver = "Oxxius"
 color = "blue"
 hex_color = "#00ff92"
 #filter_index = 2
-ao_channel = 2
+ao_channel = 3
 disable_voltage = 0.0
 enable_voltage =  5.0
+buffer_time_s = 0.001
+[channel_specs.488.camera]
+delay_time_s = 0
 [channel_specs.488.etl]
 delay = 0.0  # seconds.
 settling_time = 0.025  # seconds.
@@ -56,8 +59,8 @@ max_voltage = 2.96
 amplitude = 0.171
 offset = 2.422
 nonlinear = -0.007
-interp_time = 0.5
-buffer_time = 0.05
+interp_time_s = 0.5
+buffer_time_s = 0.05
 [channel_specs.488.gavlo_a]
 setpoint = 0.0
 [channel_specs.488.galvo_b]
@@ -70,9 +73,12 @@ driver = "Oxxius"
 color = "yellow-green"
 hex_color = "#c6ff00"
 #filter_index = 2
-ao_channel = 3  # FIXME. everything downstream from here needs real settings.
+ao_channel = 5
 disable_voltage = 0.0
 enable_voltage =  5.0
+buffer_time_s = 0.001
+[channel_specs.561.camera]
+delay_time_s = 0
 [channel_specs.561.etl]
 delay = 0.0  # seconds.
 settling_time = 0.025  # seconds.
@@ -81,8 +87,8 @@ max_voltage = 2.96
 amplitude = 0.171
 offset = 2.422
 nonlinear = -0.007
-interp_time = 0.5
-buffer_time = 0.05
+interp_time_s = 0.5
+buffer_time_s = 0.05
 [channel_specs.561.gavlo_a]
 setpoint = 0.0
 [channel_specs.561.galvo_b]
