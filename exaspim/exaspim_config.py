@@ -60,7 +60,6 @@ class ExaspimConfig(SpimConfig):
         self.camera_exposure_time = 15/1000*10640/1000.0        # unit: ms
         self.rest_time =            50.0/1000.0                 # unit: ms
         self.pulse_time =           10.0/1000.0                 # unit: ms
-
         self.n2c =                  {
                                         'etl': 0,
                                         'camera': 1,
@@ -70,19 +69,17 @@ class ExaspimConfig(SpimConfig):
                                         '561': 5,
                                         '405': 6
                                     }
-
         # tiling settings
         #self.y_grid_step_um = \
         #    (1 - self.tile_overlap_x_percent/100.0) * self.cam_x*self.pixel_x
         #
         #self.z_grid_step_um = \
-        #    (1 - self.z_overlap/100.0) * self.cam_y*self.pixel_y     
+        #    (1 - self.z_overlap/100.0) * self.cam_y*self.pixel_y
 
+        # Note: these are no longer accurate because we did axis remapping.
         #self.y_tiles = ceil(self.volume_y_um/self.y_grid_step_um)
-
         #self.z_tiles = ceil(self.volume_z_um/self.z_grid_step_um)
-
-        self.n_frames = int(self.volume_x_um/self.pixel_z)      # unit: frames
+        #self.n_frames = int(self.volume_x_um/self.pixel_z)      # unit: frames
 
     def get_channel_cycle_time(self, wavelength: int):
         """Returns required time to play a waveform period for a given channel."""
@@ -197,6 +194,6 @@ class ExaspimConfig(SpimConfig):
     def daq_num_samples(self):
         """Total samples for waveform generation."""
         samples = 0
-        for ch in self.cfg.channels:
-            samples += self.cfg.rate * self.cfg.get_channel_cycle_time(ch)
+        for ch in self.channels:
+            samples += self.rate * self.get_channel_cycle_time(ch)
         return round(samples)

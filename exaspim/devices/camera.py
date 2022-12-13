@@ -7,16 +7,13 @@ from egrabber import *
 
 class Camera:
 
-	def __init__(self):
-
+	def __init__(self, cfg):
+		self.cfg = cfg  # TODO: we should not pass the whole config.
 		self.gentl = EGenTL() # instantiate egentl
 		self.grabber = EGrabber(self.gentl) # instantiate egrabber
 		#self.data_logger_worker = None  # Memento img acquisition data logger.
 
-	def configure(self, cfg):
-
-		# TODO: we should pass in params individually.
-		self.cfg = cfg
+	def configure(self):
 		self.grabber.realloc_buffers(self.cfg.ram_buffer) # allocate RAM buffer N frames
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
 		self.grabber.remote.set("AcquisitionFrameRate", self.cfg.frame_rate) # set camera exposure fps
@@ -24,6 +21,9 @@ class Camera:
 		if self.grabber.remote.get("TriggerMode") != "On": # set camera to external trigger mode
 			self.grabber.remote.set("TriggerMode", "On") 
 		self.grabber.remote.set("Gain", self.cfg.digital_gain) # set digital gain to 1
+		# TODO: we need to implement this somehow in the config
+		#self.grabber.remote.set("OffsetX", "0")
+		#self.grabber.remote.set("Width", "14192");
 
 		# TODO: put the datalogger here.
 		# data_logger is for the camera. It needs to exist between:
@@ -32,20 +32,20 @@ class Camera:
 		#                                 self.cfg.memento_path,
 		#                                 f"{stack_prefix}_log")
 
-	def start(self, live=False):
+	def start(self, frame_count: int = 0, live: bool = False):
 		if live:
 			self.grabber.start()
 		else:
 			# TODO: data logger needs to block until it is ready.
 			# self.data_logger_worker.start()
-			self.grabber.start(self.cfg.n_frames*self.cfg.n_channels)
+			self.grabber.start(frame_count)
 
 	def grab_frame(self):
 
 		buffer = Buffer(self.grabber, timeout = int(1.0e7))
 		ptr = buffer.get_info(BUFFER_INFO_BASE, INFO_DATATYPE_PTR) # grab pointer to new frame
-		data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cfg.cam_x*self.cfg.cam_y*2)).contents # grab frame data
-		image = numpy.frombuffer(data, count=int(self.cfg.cam_x*self.cfg.cam_y), dtype=numpy.uint16).reshape((self.cfg.cam_y,self.cfg.cam_x)) # cast data to numpy array of correct size/datatype, push to numpy buffer
+		data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cfg.sensor_column_count*self.cfg.sensor_row_count*2)).contents # grab frame data
+		image = numpy.frombuffer(data, count=int(self.cfg.sensor_column_count*self.cfg.sensor_row_count), dtype=numpy.uint16).reshape((self.cfg.sensor_row_count,self.cfg.sensor_column_count)) # cast data to numpy array of correct size/datatype, push to numpy buffer
 		self.tstamp = buffer.get_info(BUFFER_INFO_TIMESTAMP, INFO_DATATYPE_SIZET) # grab new frame time stamp
 		buffer.push()
 

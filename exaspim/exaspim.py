@@ -36,7 +36,7 @@ class Exaspim(Spim):
         # Containers
         self.img_buffers = {}  # Shared double buffers for acquisition & compression.
         # Hardware
-        self.cam = Camera() if not self.simulated else Mock(Camera)
+        self.cam = Camera(self.cfg) if not self.simulated else Mock(Camera)
         self.ni = NI(self.cfg) if not self.simulated else Mock(NI)
         self.etl = None
         self.gavlo_a = None
@@ -75,7 +75,8 @@ class Exaspim(Spim):
 
     def _setup_camera(self):
         """Configure the camera according to the config."""
-        # pass config parameters into object here.
+        # TODO: pass in config parameters here instead of passing in cfg on init.
+        self.cam.configure()
         if self.simulated:
             self.last_frame_time = perf_counter()
             self.cam.print_statistics.return_value = "No simulated statistics."
@@ -168,8 +169,6 @@ class Exaspim(Spim):
         # Reset the starting location.
         self.sample_pose.zero_in_place()
         self.stage_x_pos, self.stage_y_pos = (0, 0)
-        # FIXME: how do we configure the tigerbox to step in a fixed size
-        #   according to the NI card?
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
@@ -290,7 +289,7 @@ class Exaspim(Spim):
             self.stack_writer_workers[ch].start()
         start_time = perf_counter()
         try:
-            self.cam.start(live=False)  # TODO: rewrite to block until ready.
+            self.cam.start(frame_count, live=False)  # TODO: rewrite to block until ready.
             self.ni.start()
             # Images arrive serialized in repeating channel order.
             last_frame_index = frame_count - 1
@@ -325,9 +324,9 @@ class Exaspim(Spim):
             capture_successful = True
             self.log.debug(f"Stack imaging time: "
                            f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
-        # except Exception:
-        #     traceback.print_exc()
-        #     raise
+        except Exception:
+            traceback.print_exc()
+            raise
         finally:
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop()

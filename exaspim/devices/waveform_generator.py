@@ -86,7 +86,7 @@ def generate_waveforms(cfg, plot=False):
 
 	if plot:
 		# Total waveform time in sec
-		# FIXME
+		# FIXME: we should remove all calls to cfg.cfg and replace with getters.
 		t = np.linspace(0, (cfg.daq_num_samples / cfg.rate), cfg.daq_num_samples, endpoint=False)
 		plot_waveforms_to_pdf(t, voltages_out)
 
@@ -119,20 +119,18 @@ class NI:
 		self.daq_samples = round(samples)
 
 		self.co_task = nidaqmx.Task('counter_output_task')
-		self.co_task.co_channels.add_co_pulse_chan_freq(
-			'/Dev1/ctr0',
-			units=Freq.HZ,
-			idle_state=Level.LOW,
-			initial_delay=0.0,
-			freq=1.0/(self.daq_samples/self.cfg.rate),
-			duty_cycle=0.5)
+		co_chan = self.co_task.co_channels.add_co_pulse_chan_freq('/Dev1/ctr0',
+																	units=Freq.HZ,
+																	idle_state=Level.LOW,
+																	initial_delay=0.0,
+																	freq=1.0/(self.daq_samples/self.cfg.rate),
+																	duty_cycle=0.5)
+		# TODO: this should be in the config.
+		co_chan.co_pulse_term = '/Dev1/PFI0'
 		
 		self.co_task.timing.cfg_implicit_timing(
 			sample_mode=AcqType.CONTINUOUS if live else AcqType.FINITE,
 			samps_per_chan=frame_count)
-
-		# TODO: this should be in the config.
-		self.co_task.co_pulse_term = '/Dev1/PFI0'
 
 		self.ao_task = nidaqmx.Task("analog_output_task")
 		for channel_name, channel_index in self.cfg.n2c.items():
@@ -146,10 +144,11 @@ class NI:
 		self.ao_task.triggers.start_trigger.retriggerable = True
 		# TODO: trigger source should be in the config.
 		self.ao_task.triggers.start_trigger.cfg_dig_edge_start_trig(
-			trigger_source='/Dev1/PFI1',
+#			trigger_source='/Dev1/PFI1',
+			trigger_source='/Dev1/PFI0',
 			trigger_edge=Slope.RISING)
 
-		voltages_out = generate_waveforms(self.cfg)
+		voltages_out = generate_waveforms(self.cfg, plot=True)
 		self.ao_task.write(voltages_out)
 
 	def start(self):
