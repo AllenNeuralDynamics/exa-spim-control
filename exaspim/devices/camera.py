@@ -14,13 +14,15 @@ class Camera:
 		#self.data_logger_worker = None  # Memento img acquisition data logger.
 
 	def configure(self):
-		self.grabber.realloc_buffers(self.cfg.ram_buffer) # allocate RAM buffer N frames
+		# realloc buffers appears to be allocating ram on the pc side, not camera side.
+		self.grabber.realloc_buffers(self.cfg.egrabber_frame_buffer) # allocate RAM buffer N frames
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
-		self.grabber.remote.set("AcquisitionFrameRate", self.cfg.frame_rate) # set camera exposure fps
-		self.grabber.remote.set("ExposureTime", self.cfg.dwell_time*1.0e6) # set exposure time us, i.e. slit width
+		# Frame rate setting does not need to be set in external trigger mode.
+		self.grabber.remote.set("ExposureTime", self.cfg.camera_dwell_time*1.0e6) # set exposure time us, i.e. slit width
+		# Note: Setting TriggerMode if it's already correct will throw an error
 		if self.grabber.remote.get("TriggerMode") != "On": # set camera to external trigger mode
 			self.grabber.remote.set("TriggerMode", "On") 
-		self.grabber.remote.set("Gain", self.cfg.digital_gain) # set digital gain to 1
+		self.grabber.remote.set("Gain", self.cfg.camera_digital_gain) # set digital gain to 1
 		# TODO: we need to implement this somehow in the config
 		#self.grabber.remote.set("OffsetX", "0")
 		#self.grabber.remote.set("Width", "14192");
@@ -41,29 +43,19 @@ class Camera:
 			self.grabber.start(frame_count)
 
 	def grab_frame(self):
-
+		"""Retrieve a frame as a 2D numpy array with shape (rows, cols)."""
+		# Note: creating the buffer and then "pushing" it at the end has the
+		# 	effect of moving the internal camera frame buffer from the output
+		# 	pool back to the input pool so it can be reused.
 		buffer = Buffer(self.grabber, timeout = int(1.0e7))
 		ptr = buffer.get_info(BUFFER_INFO_BASE, INFO_DATATYPE_PTR) # grab pointer to new frame
 		data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cfg.sensor_column_count*self.cfg.sensor_row_count*2)).contents # grab frame data
 		image = numpy.frombuffer(data, count=int(self.cfg.sensor_column_count*self.cfg.sensor_row_count), dtype=numpy.uint16).reshape((self.cfg.sensor_row_count,self.cfg.sensor_column_count)) # cast data to numpy array of correct size/datatype, push to numpy buffer
 		self.tstamp = buffer.get_info(BUFFER_INFO_TIMESTAMP, INFO_DATATYPE_SIZET) # grab new frame time stamp
 		buffer.push()
-
 		return image
 
-	# TODO: does this even work??
-	# 	Should we just announce-and-queue a bunch of frames in advance?
-	def grab_frame_to_mem(self, buf: memoryview):
-		img_mem = UserMemory(buf)
-		self.grabber.announce_and_queue(img_mem)
-		recv_buf = Buffer(self.grabber, timeout=int(1.0e7))  # blocks until new data arrives?
-		del recv_buf
-		del img_mem
-
-
-
 	def stop(self):
-
 		self.grabber.stop()
 		# self.data_logger_worker.stop()
 		# self.data_logger_worker.close()

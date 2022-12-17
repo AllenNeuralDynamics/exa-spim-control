@@ -10,18 +10,34 @@ tile_overlap_y_percent = 15
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
 volume_x_um = 7958.72
 volume_y_um = 10615.616
-volume_z_um = 256
+volume_z_um = 64
 laser_wavelengths = [488]# [488, 561]
 
 [design_specs]
-slit_width_pixels = 120 # pixels
+slit_width_pixels = 333 # pixels.
+
+[waveform_specs]
+ttl_pulse_time_s = 0.010
+frame_rest_time_s = 0.050
+
+[compressor_specs]
 image_stack_chunk_size = 64
 #image_stack_chunk_size = 32
 memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
 compressor_thread_count = 32
 compression_style = 'lz4'
-file_transfer_protocol = 'xcopy'
-file_transfer_protocol_flags = '/j /i'
+
+[file_transfer_specs]
+protocol = 'xcopy'
+protocol_flags = '/j /i'
+
+[camera_specs]
+egrabber_frame_buffer = 8
+unpacking_mode = 'Msb'
+autoscale = false
+method = 'Full'
+digital_gain_adu = 1
+line_interval_us = 15  # cannot be changed.
 
 [tile_specs]
 x_field_of_view_um = 7958.72 # X image field of view in [um].
@@ -34,10 +50,6 @@ data_type = "uint16"
 [sample_stage_specs]
 move_time_um = 0.025 # time it takes the stage to move 1[um] and settle.
 backlash_reset_distance_um = 4 # [um]
-
-# Signals
-[waveform_specs]
-start_of_frame_delay = 950e-6 # seconds. Time between external trigger and first hsync.
 
 # Laser Channel specific settings
 [channel_specs.488]
@@ -103,8 +115,15 @@ etl = 1
 # <SOMETHING>_kwds will be splatted with **kwds to init the corresponding object.
 [daq_driver_kwds]
 dev_name = 'Dev1' # NI Card address as it appears to the PC.
-output_trigger_name = 'port0/line0'
-update_frequency = 4e5 # Hz
+samples_per_sec = 1e4
+[daq_driver_kwds.ao_channels]
+etl = 0
+camera = 1
+stage = 2
+488 = 3
+638 = 4
+561 = 5
+405 = 6
 
 [tiger_controller_driver_kwds]
 com_port='COM3'

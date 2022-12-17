@@ -11,7 +11,7 @@ from mock import NonCallableMock as Mock
 from mock import patch
 from exaspim.exaspim_config import ExaspimConfig
 from exaspim.devices.camera import Camera
-from exaspim.devices.waveform_generator import NI
+from exaspim.devices.waveform_generator import NI, generate_waveforms
 from exaspim.processes.mip_processor import MIPProcessor
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
@@ -37,7 +37,7 @@ class Exaspim(Spim):
         self.img_buffers = {}  # Shared double buffers for acquisition & compression.
         # Hardware
         self.cam = Camera(self.cfg) if not self.simulated else Mock(Camera)
-        self.ni = NI(self.cfg) if not self.simulated else Mock(NI)
+        self.ni = NI(**self.cfg.daq_obj_kwds) if not self.simulated else Mock(NI)
         self.etl = None
         self.gavlo_a = None
         self.gavlo_b = None
@@ -58,9 +58,11 @@ class Exaspim(Spim):
 
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
-        # The tigerbox x axis is the sample pose z axis.
+        # TODO: All of these should be done from some sort of SamplePose interface.
+        # Note: The tigerbox x axis is the sample pose z axis.
         #   TODO: map this in the config.
         self.tigerbox.set_axis_backlash(x=0)
+        # TODO: setup "TTL X=2" (from sample pose space point of view)
 
     def __simulated_grab_frame(self):
         elapsed_time = perf_counter() - self.last_frame_time
@@ -166,8 +168,10 @@ class Exaspim(Spim):
         self.image_index = 0  # Reset image index.
         start_time = perf_counter()  # For logging total time.
         self.ni.configure(frame_count=len(channels) * ztiles)
+        voltages_t = generate_waveforms(self.cfg, plot=True)
+        self.ni.assign_waveforms(voltages_t)
         # Reset the starting location.
-        self.sample_pose.zero_in_place()
+        self.sample_pose.zero_in_place('x', 'y', 'z')
         self.stage_x_pos, self.stage_y_pos = (0, 0)
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
@@ -272,7 +276,6 @@ class Exaspim(Spim):
                                                       dtype=self.cfg.datatype)
             chunk_dim_order = ('z', 'y', 'x')  # must agree with mem_shape
             self.log.debug(f"Creating StackWriter for {ch}[nm] channel.")
-            # TODO: **kwargs here.
             self.stack_writer_workers[ch] = \
                 StackWriter(self.cfg.sensor_row_count,
                             self.cfg.sensor_column_count,
@@ -299,7 +302,7 @@ class Exaspim(Spim):
                 for ch_index in channels:
                     self.log.debug(f"Grabbing frame {frame_index} for "
                                    f"{ch_index}[nm] channel.")
-                    self.img_buffers[ch_index].write_buf[chunk_index] = self._grab_frame()
+                    self.img_buffers[ch_index].write_buf[chunk_index] = self.cam.grab_frame()
                 self.image_index += 1
                 # Dispatch either a full chunk of frames or the last chunk,
                 # which may not be a multiple of the chunk size.
@@ -349,11 +352,6 @@ class Exaspim(Spim):
             self.sample_pose.move_absolute(z=0)
         return stack_file_names
 
-    def _grab_frame(self):
-        """Return the latest camera frame. Internally update livestream image."""
-        # TODO: update image index we will show in the live view.
-        return self.cam.grab_frame()
-
     def _all_stack_workers_idle(self):
         """Helper function. True if all StackWriters are idle."""
         return all([w.done_reading.is_set()
@@ -383,10 +381,8 @@ class Exaspim(Spim):
 
     def close(self):
         """Safely close all open hardware connections."""
-        self.log.info("Closing NIDAQ connection.")
-        self.ni.close()
         # Close any opened shared memory.
         for ch_name, buf in self.img_buffers.items():
             buf.close_and_unlink()
-        # TODO: power down lasers.
+        # TODO: power down hardware.
         super().close()  # Call this last.

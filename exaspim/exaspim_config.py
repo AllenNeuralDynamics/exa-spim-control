@@ -1,4 +1,5 @@
 import datetime
+import copy
 from math import ceil
 from pathlib import Path
 from mesospim.config_base import SpimConfig
@@ -13,79 +14,25 @@ class ExaspimConfig(SpimConfig):
     def __init__(self, toml_filepath: str):
         super().__init__(toml_filepath, TomlTemplate)
 
-        # Make references to mutable objects
-        self.stage_specs = self.cfg['sample_stage_specs']  # TODO: put in base class?
+        # Make references to mutable objects.
+        self.waveform_specs = self.cfg['waveform_specs']
+        self.compressor_specs = self.cfg['compressor_specs']
+        self.file_transfer_specs = self.cfg['file_transfer_specs']
+        self.stage_specs = self.cfg['sample_stage_specs']
         self.channel_specs = self.cfg['channel_specs']
+        self.camera_specs = self.cfg['camera_specs']
 
-        # um per pixel
-        #self.pixel_x = 0.748  # unit: um/px. x_voxel_size_um. Derived.
-        #self.pixel_y = 0.748  # unit: um/px. y_voxel_size_um. Derived.
-        self.pixel_z = 1.0                                      # unit: um/px
+        # Keyword arguments for instantiating objects.
+        self.sample_pose_kwds = self.cfg['sample_pose_kwds']
+        self.tiger_obj_kwds = self.cfg['tiger_controller_driver_kwds']
+        # Other obj kwds are generated dynamically.
 
-        self.channel_powers = {
-                            '405': 0.0,
-                            '488': 0.0,
-                            '561': 0.0,
-                            '638': 0.0
-                        }
-        self.n_channels = len(self.channels)
-                        
-        # viewer settings
-        self.autoscale = False        # viewer: autoscaling bool
-        self.method = 'Full'          # viewer: downscaling method
-        self.frame_rate = 4           # viewer: framerate
-        #self.scale_x = self.pixel_x  # viewer: scaling unit for pixels -> renderer seems to default to pyramid position 2
-        #self.scale_y = self.pixel_y  # viewer: scaling unit for pixels
-
-        # camera settings
-        #self.cam_x = 14192           # unit: pixels
-        #self.cam_y = 10640           # unit: pixels
-        self.ram_buffer = 8           # unit: frames
-        self.dwell_time = 5.0/1000.0  # unit: s
-        self.digital_gain = 1         # unit: ADU
-
-        # data writer settings
-        self.n_threads = 32 # threads
-        self.compression = 'lz4'      # writer: compression method
-        #self.chunk_size = 128         # unit: frames
-
-
-        # rotation stage settings
-        self.rotation =             40.5                        # unit: degrees
-
-        # waveform generator settings
-        self.dev_name = 'Dev1'                                  # waveform enerator: address
-        self.rate = 1e4                                         # unit: Hz
-
-        self.camera_exposure_time = 15/1000*10640/1000.0        # unit: ms
-        self.rest_time =            50.0/1000.0                 # unit: ms
-        self.pulse_time =           10.0/1000.0                 # unit: ms
-        self.n2c =                  {
-                                        'etl': 0,
-                                        'camera': 1,
-                                        'stage': 2,
-                                        '488': 3,
-                                        '638': 4,
-                                        '561': 5,
-                                        '405': 6
-                                    }
-        # tiling settings
-        #self.y_grid_step_um = \
-        #    (1 - self.tile_overlap_x_percent/100.0) * self.cam_x*self.pixel_x
-        #
-        #self.z_grid_step_um = \
-        #    (1 - self.z_overlap/100.0) * self.cam_y*self.pixel_y
-
-        # Note: these are no longer accurate because we did axis remapping.
-        #self.y_tiles = ceil(self.volume_y_um/self.y_grid_step_um)
-        #self.z_tiles = ceil(self.volume_z_um/self.z_grid_step_um)
-        #self.n_frames = int(self.volume_x_um/self.pixel_z)      # unit: frames
-
+    # Per-channel getter methods.
     def get_channel_cycle_time(self, wavelength: int):
         """Returns required time to play a waveform period for a given channel."""
         return self.camera_exposure_time \
                + self.get_etl_buffer_time(wavelength) \
-               + self.rest_time
+               + self.frame_rest_time
 
     def get_camera_delay_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['camera']['delay_time_s']
@@ -108,8 +55,27 @@ class ExaspimConfig(SpimConfig):
     def get_laser_buffer_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['buffer_time_s']
 
-    # TODO: add setters for the above.
+    # Waveform Specs
+    @property
+    def ttl_pulse_time(self):
+        return self.waveform_specs['ttl_pulse_time_s']
 
+    @ttl_pulse_time.setter
+    def ttl_pulse_time(self, seconds):
+        """The "on-period" length of an external TTL trigger pulse."""
+        self.waveform_specs['ttl_pulse_time_s'] = seconds
+
+    @property
+    def frame_rest_time(self):
+        return self.waveform_specs['frame_rest_time_s']
+
+    @frame_rest_time.setter
+    def frame_rest_time(self, seconds):
+        """The rest time in between frames for the ETL to snap back to its
+        starting position."""
+        self.waveform_specs['frame_rest_time_s'] = seconds
+
+    # Stage Specs
     @property
     def z_step_size_um(self):
         return self.cfg['imaging_specs']['z_step_size_um']
@@ -126,20 +92,60 @@ class ExaspimConfig(SpimConfig):
     def stage_backlash_reset_dist_um(self, micrometers: int):
         self.stage_specs['backlash_reset_distance_um'] = micrometers
 
+    # Camera Specs
+    @property
+    def egrabber_frame_buffer(self):
+        return self.camera_specs['egrabber_frame_buffer']
+
+    @egrabber_frame_buffer.setter
+    def egrabber_frame_buffer(self, size: int):
+        self.camera_specs['egrabber_frame_buffer'] = size
+
+    @property  # No setter!
+    def camera_line_interval_us(self):
+        """Camera Line Interval. Cannot be changed."""
+        return self.camera_specs['line_interval_us']
+
+    @property
+    def slit_width(self):
+        """Slit width (in pixels) of the slit that moves along the frame"""
+        return self.design_specs['slit_width_pixels']
+
+    @slit_width.setter
+    def slit_width(self, pixels):
+        self.design_specs['slit_width_pixels'] = pixels
+
+    @property
+    def camera_digital_gain(self):
+        return self.camera_specs['digital_gain_adu']
+
+    @camera_digital_gain.setter
+    def camera_digital_gain(self, adu: float):
+        self.camera_specs['digital_gain_adu'] = adu
+
+    # Compressor Specs
     @property
     def compressor_style(self):
-        return self.design_specs['compression_style']
+        return self.compressor_specs['compression_style']
 
     @property
     def compressor_thread_count(self):
-        return self.design_specs['compressor_thread_count']
+        return self.compressor_specs['compressor_thread_count']
 
     @property
     def compressor_chunk_size(self):
         """number of images in a chunk to be compressed at a time."""
-        return self.design_specs['image_stack_chunk_size']
+        return self.compressor_specs['image_stack_chunk_size']
 
-    # @properties for flattening object hierarchy
+    @property
+    def memento_path(self) -> Path:
+        return Path(self.compressor_specs['memento_executable_path'])
+
+    @memento_path.setter
+    def memento_path(self, path: Path):
+        self.compressor_specs['memento_path'] = str(path.absolute())
+
+    # Tile Specs
     @property
     def datatype(self) -> str:
         return self.tile_specs['data_type']
@@ -148,52 +154,61 @@ class ExaspimConfig(SpimConfig):
     def datatype(self, numpy_datatype: str):
         self.tile_specs['data_type'] = numpy_datatype
 
-    @property
-    def memento_path(self) -> Path:
-        return Path(self.design_specs['memento_executable_path'])
-
-    @memento_path.setter
-    def memento_path(self, path: Path):
-        self.design_specs['memento_path'] = str(path.absolute())
-
+    # File Transfer Specs
     @property
     def ftp(self) -> str:
-        return self.design_specs['file_transfer_protocol']
+        return self.file_transfer_specs['protocol']
 
     @ftp.setter
     def ftp(self, protocol: str):
-        self.design_specs['file_transfer_protocol'] = protocol
+        self.file_transfer_specs['protocol'] = protocol
 
     @property
     def ftp_flags(self) -> str:
-        return self.design_specs['file_transfer_protocol_flags']
+        return self.file_transfer_specs['protocol_flags']
 
     @ftp_flags.setter
     def ftp_flags(self, flags: str):
-        self.design_specs['file_transfer_protocol_flags'] = flags
-        
-    @property
-    def daq_update_freq(self):
-        return self.daq_obj_kwds['update_frequency_hz']
+        self.file_transfer_specs['protocol_flags'] = flags
 
-    @daq_update_freq.setter
-    def daq_update_freq(self, hz: int):
-        self.daq_obj_kwds['update_frequency_hz'] = hz
-
-    # Keywords
+    # Daq Specs
     @property
-    def tiger_obj_kwds(self):
-        return self.cfg['tiger_controller_driver_kwds']
+    def daq_sample_rate(self):
+        return self.daq_obj_kwds['samples_per_sec']
+
+    @daq_sample_rate.setter
+    def daq_sample_rate(self, hz: int):
+        self.daq_obj_kwds['samples_per_sec'] = hz
 
     @property
-    def sample_pose_kwds(self):
-        return self.cfg['sample_pose_kwds']
+    def n2c(self) -> dict:
+        """dictionary {<analog output name> : <analog output channel>}."""
+        return self.daq_obj_kwds['ao_channels']
 
-    # Derived properties
+    # Dynamically generated keyword arguments.
     @property
-    def daq_num_samples(self):
-        """Total samples for waveform generation."""
-        samples = 0
-        for ch in self.channels:
-            samples += self.rate * self.get_channel_cycle_time(ch)
-        return round(samples)
+    def daq_obj_kwds(self):
+        # Don't affect the config file's version by making a copy.
+        obj_kwds = copy.deepcopy(self.cfg['daq_driver_kwds'])
+        obj_kwds['period_time_s'] = sum([self.get_channel_cycle_time(ch)
+                                         for ch in self.channels])
+        return obj_kwds
+
+    # Derived properties. These do not have setters
+    @property
+    def daq_period_time(self):
+        return sum([self.get_channel_cycle_time(ch) for ch in self.channels])
+
+    @property
+    def camera_exposure_time(self):
+        """Camera exposure time in seconds."""
+        # (line interval [us]) * (number of rows) * (1 [s] / 1000000 [us])
+        return self.camera_line_interval_us * self.sensor_row_count / 1.0e6
+
+    @property
+    def camera_dwell_time(self):
+        # FIXME: this could be removed if derive the calculation from
+        #   slit width in the waveform_generator.
+        # (dwell time [us]) / (line interval [us/pixel]) is slit width.
+        # (slit width [pixels]) * (line interval [us/pixel]) * (1 [s]/1e6[us])
+        return self.slit_width * self.camera_line_interval_us / 1.0e6
