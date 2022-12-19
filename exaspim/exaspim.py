@@ -8,11 +8,10 @@ from pathlib import Path
 from psutil import virtual_memory
 from time import perf_counter, sleep
 from mock import NonCallableMock as Mock
-from mock import patch
 from exaspim.exaspim_config import ExaspimConfig
 from exaspim.devices.camera import Camera
-from exaspim.devices.waveform_generator import NI, generate_waveforms
-from exaspim.processes.mip_processor import MIPProcessor
+from exaspim.devices.ni import NI
+from exaspim.operations.waveform_generator import generate_waveforms
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer

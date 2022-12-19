@@ -2,7 +2,7 @@ import os
 import os.path
 import time
 from exaspim.devices import camera
-from exaspim.devices import waveform_generator
+from exaspim.devices import ni
 from exaspim.processes import stack_writer
 from exaspim.processes import mip_processor
 from exaspim.processes import file_transfer
