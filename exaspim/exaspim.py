@@ -116,6 +116,7 @@ class Exaspim(Spim):
                                       self.cfg.channels,
                                       self.cfg.tile_overlap_x_percent,
                                       self.cfg.tile_overlap_y_percent,
+                                      self.cfg.z_step_size_um,
                                       self.cfg.tile_prefix,
                                       self.cfg.compressor_chunk_size,
                                       self.cfg.local_storage_dir,
@@ -130,6 +131,7 @@ class Exaspim(Spim):
                                  channels: list[int],
                                  tile_overlap_x_percent: float,
                                  tile_overlap_y_percent: float,
+                                 z_step_size_um: float,
                                  tile_prefix: str,
                                  compressor_chunk_size: int = None,
                                  local_storage_dir: Path = Path("."),
@@ -157,8 +159,7 @@ class Exaspim(Spim):
                       / x_grid_step_um)
         ysteps = ceil((volume_y_um - self.cfg.tile_size_y_um)
                       / y_grid_step_um)
-        zsteps = ceil((volume_z_um - self.cfg.z_step_size_um)
-                      / self.cfg.z_step_size_um)
+        zsteps = ceil((volume_z_um - z_step_size_um) / z_step_size_um)
         xtiles, ytiles, ztiles = (1 + xsteps, 1 + ysteps, 1 + zsteps)
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         # Setup containers
@@ -188,8 +189,8 @@ class Exaspim(Spim):
                     stack_prefix = f"{tile_prefix}_" \
                                    f"{self.stage_x_pos}_{self.stage_y_pos}"
                     output_filenames = \
-                        self._collect_zstacks(channels, ztiles, chunk_size,
-                                              stack_prefix)
+                        self._collect_zstacks(channels, ztiles, z_step_size_um,
+                                              chunk_size, stack_prefix)
                     # Start transferring tiff file to its destination.
                     # Note: Image transfer should be faster than image capture,
                     #   but we still wait for prior process to finish.
@@ -229,7 +230,8 @@ class Exaspim(Spim):
         #        tif.write(mip_data)
 
     def _collect_zstacks(self, channels: list[int], frame_count: int,
-                         chunk_size: int, stack_prefix: str):
+                         z_step_size_um: float, chunk_size: int,
+                         stack_prefix: str):
         """Collect tile stack for every specified channel and write them to
         disk compressed through ImarisWriter.
 
@@ -248,6 +250,7 @@ class Exaspim(Spim):
 
         :param channels: a list of channels
         :param frame_count: number of frames to collect into a stack.
+        :param z_step_size_um: spacing between each step.
         :param chunk_size: the number of batch frames to send to
             the external compression process at a time.
 
@@ -263,6 +266,8 @@ class Exaspim(Spim):
         self.sample_pose.move_absolute(z=round(z_backup_pos))
         self.sample_pose.move_absolute(z=stage_z_pos)
         self.sample_pose.move_absolute(z=round(stage_z_pos))
+        self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
+                                                       z_step_size_um/1.0e3)
         self.setup_imaging_hardware()
 
         # Allocate shard memory and create StackWriter per-channel.
@@ -374,6 +379,7 @@ class Exaspim(Spim):
         """
         # TODO: implement this by grabbing the last frame written to the
         #  img_buffer's write_buffer
+        # TODO: use OpenCL to downsample the image on the GPU.
         return np.zeros((self.cfg.sensor_row_count,
                          self.cfg.sensor_column_count),
                         dtype=self.cfg.image_dtype)

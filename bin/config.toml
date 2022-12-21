@@ -14,11 +14,12 @@ volume_z_um = 64
 laser_wavelengths = [488]# [488, 561]
 
 [design_specs]
-slit_width_pixels = 333 # pixels.
+slit_width_pixels = 333.3 # pixels.
 
 [waveform_specs]
 ttl_pulse_time_s = 0.010
 frame_rest_time_s = 0.050
+buffer_time_s = 0.05
 
 [compressor_specs]
 image_stack_chunk_size = 64
@@ -100,7 +101,6 @@ amplitude = 0.171
 offset = 2.422
 nonlinear = -0.007
 interp_time_s = 0.5
-buffer_time_s = 0.05
 [channel_specs.561.gavlo_a]
 setpoint = 0.0
 [channel_specs.561.galvo_b]

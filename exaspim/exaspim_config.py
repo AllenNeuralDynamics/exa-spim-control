@@ -202,7 +202,7 @@ class ExaspimConfig(SpimConfig):
     @property
     def camera_exposure_time(self):
         """Camera exposure time in seconds."""
-        # (line interval [us]) * (number of rows) * (1 [s] / 1000000 [us])
+        # (line interval [us]) * (number of rows [pixels]) * (1 [s] / 1e6 [us])
         return self.camera_line_interval_us * self.sensor_row_count / 1.0e6
 
     @property

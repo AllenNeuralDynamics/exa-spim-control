@@ -16,8 +16,10 @@ class Camera:
 	def configure(self):
 		# realloc buffers appears to be allocating ram on the pc side, not camera side.
 		self.grabber.realloc_buffers(self.cfg.egrabber_frame_buffer) # allocate RAM buffer N frames
+		# Note: Msb unpacking is slightly faster according to camera vendor.
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
 		# Frame rate setting does not need to be set in external trigger mode.
+		# TODO: round exposure time to one decimal place.
 		self.grabber.remote.set("ExposureTime", self.cfg.camera_dwell_time*1.0e6) # set exposure time us, i.e. slit width
 		# Note: Setting TriggerMode if it's already correct will throw an error
 		if self.grabber.remote.get("TriggerMode") != "On": # set camera to external trigger mode
@@ -25,7 +27,7 @@ class Camera:
 		self.grabber.remote.set("Gain", self.cfg.camera_digital_gain) # set digital gain to 1
 		# TODO: we need to implement this somehow in the config
 		#self.grabber.remote.set("OffsetX", "0")
-		#self.grabber.remote.set("Width", "14192");
+		#self.grabber.remote.set("Width", "14192")
 
 		# TODO: put the datalogger here.
 		# data_logger is for the camera. It needs to exist between:

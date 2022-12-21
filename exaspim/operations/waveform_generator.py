@@ -26,15 +26,18 @@ def plot_waveforms_to_pdf(t, voltages_t):
 def generate_waveforms(cfg, plot=False):
     voltages_t = {}
     total_samples = 0
+
+    # Create samples arrays for various relevant timings
+    camera_exposure_samples = int(cfg.daq_sample_rate * cfg.camera_exposure_time)
+    rest_samples = int(cfg.daq_sample_rate * cfg.frame_rest_time)
+    dwell_time_samples = int(cfg.daq_sample_rate * cfg.camera_dwell_time)
+    pulse_samples = int(cfg.daq_sample_rate * cfg.ttl_pulse_time)
+
     for ch in cfg.channels:
-        # Create samples arrays for various relevant timings
-        camera_exposure_samples = int(cfg.daq_sample_rate * cfg.camera_exposure_time)
+        # Create channel-specific samples arrays for various relevant timings
         camera_delay_samples = int(cfg.daq_sample_rate * cfg.get_camera_delay_time(ch))
         etl_buffer_samples = int(cfg.daq_sample_rate * cfg.get_etl_buffer_time(ch))
         laser_buffer_samples = int(cfg.daq_sample_rate * cfg.get_laser_buffer_time(ch))
-        rest_samples = int(cfg.daq_sample_rate * cfg.frame_rest_time)
-        dwell_time_samples = int(cfg.daq_sample_rate * cfg.camera_dwell_time)
-        pulse_samples = int(cfg.daq_sample_rate * cfg.ttl_pulse_time)
         channel_samples = camera_exposure_samples + etl_buffer_samples + rest_samples
 
         total_samples += channel_samples
@@ -73,7 +76,8 @@ def generate_waveforms(cfg, plot=False):
         # Generate stage TTL signal
         if ch == cfg.channels[-1]:
             voltages_t[ch][cfg.n2c['stage'],
-            camera_exposure_samples + etl_buffer_samples + dwell_time_samples:camera_exposure_samples + etl_buffer_samples + dwell_time_samples + pulse_samples] = 0.0
+                           camera_exposure_samples + etl_buffer_samples + dwell_time_samples:
+                           camera_exposure_samples + etl_buffer_samples + dwell_time_samples + pulse_samples] = 5.0
 
     # Merge voltage arrays
     voltages_out = np.array([]).reshape((len(cfg.n2c), 0))
