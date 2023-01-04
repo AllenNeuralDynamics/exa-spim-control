@@ -17,8 +17,8 @@ from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
 from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
 from tigerasi.sim_tiger_controller import TigerController as SimTiger
-from mesospim.spim_base import Spim
-from mesospim.devices.tiger_components import SamplePose
+from spim_core.spim_base import Spim
+from spim_core.devices.tiger_components import SamplePose
 
 # Constants
 IMARIS_TIMEOUT_S = 0.1
