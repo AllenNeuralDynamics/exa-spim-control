@@ -47,8 +47,9 @@ class Exaspim(Spim):
                                       **self.cfg.sample_pose_kwds)
         # Extra Internal State attributes for the current image capture
         # sequence. These really only need to persist for logging purposes.
-        self.image_index = 0  # current image to capture.
+        self.frame_index = 0  # current image to capture.
         self.total_tiles = 0  # tiles to be captured.
+        self.prev_frame_chunk_index = None  # chunk index of most recent frame.
         self.stage_x_pos = None
         self.stage_y_pos = None
         # Setup hardware according to the config.
@@ -57,11 +58,8 @@ class Exaspim(Spim):
 
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
-        # TODO: All of these should be done from some sort of SamplePose interface.
-        # Note: The tigerbox x axis is the sample pose z axis.
-        #   TODO: map this in the config.
-        self.tigerbox.set_axis_backlash(x=0)
-        # TODO: setup "TTL X=2" (from sample pose space point of view)
+        # Note: tigerbox x axis is the sample pose z axis.
+        self.sample_pose.set_axis_backlash(z=0)
 
     def __simulated_grab_frame(self):
         elapsed_time = perf_counter() - self.last_frame_time
@@ -165,7 +163,7 @@ class Exaspim(Spim):
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
         output_filenames = {}  # {<channel_name>: <filename_of_stack>}
-        self.image_index = 0  # Reset image index.
+        self.frame_index = 0  # Reset image index.
         start_time = perf_counter()  # For logging total time.
         self.ni.configure(frame_count=len(channels) * ztiles)
         voltages_t = generate_waveforms(self.cfg, plot=True)
@@ -221,6 +219,7 @@ class Exaspim(Spim):
             self.log.debug("Deallocating shared memory.")
             for _, buf in self.img_buffers.items():
                 buf.close_and_unlink()
+            self.img_buffers = {}  # Disables live view.
         # Write MIPs to files.
         # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
         # for ch, mip_data in mips.items():
@@ -300,21 +299,25 @@ class Exaspim(Spim):
             self.ni.start()
             # Images arrive serialized in repeating channel order.
             last_frame_index = frame_count - 1
-            for frame_index in range(frame_count):
-                chunk_index = frame_index % chunk_size
+            for stack_index in range(frame_count):
+                chunk_index = stack_index % chunk_size
                 # Deserialize camera input into corresponding channel.
                 for ch_index in channels:
-                    self.log.debug(f"Grabbing frame {frame_index} for "
+                    self.log.debug(f"Grabbing frame {stack_index} for "
                                    f"{ch_index}[nm] channel.")
-                    self.img_buffers[ch_index].write_buf[chunk_index] = self.cam.grab_frame()
-                self.image_index += 1
+                    self.img_buffers[ch_index].write_buf[chunk_index] = \
+                        self.cam.grab_frame()
+                # Save the index of the most-recently captured frame to
+                # offer it to a live display upon request.
+                self.prev_frame_chunk_index = chunk_index
+                self.frame_index += 1
                 # Dispatch either a full chunk of frames or the last chunk,
                 # which may not be a multiple of the chunk size.
-                if chunk_index == chunk_size - 1 or frame_index == last_frame_index:
+                if chunk_index == chunk_size - 1 or stack_index == last_frame_index:
                     # Wait for z stack writing to finish before dispatching
                     # more data.
                     if not self._all_stack_workers_idle():
-                        final = "final " if frame_index == last_frame_index else ""
+                        final = "final " if stack_index == last_frame_index else ""
                         self.log.warning(f"Waiting for {final}chunk to be "
                                          f"compressed to disk.")
                     while not self._all_stack_workers_idle():
@@ -337,7 +340,7 @@ class Exaspim(Spim):
         finally:
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop()
-            self.ni.close()  # TODO: do we need this??
+            self.ni.close()
             self.cam.stop()
             # Wait for stack writers to finish writing files to disk if capture
             # was successful.
@@ -377,12 +380,15 @@ class Exaspim(Spim):
         :param channel: the channel to get the latest image for, or None,
             if only one channel is being imaged.
         """
-        # TODO: implement this by grabbing the last frame written to the
-        #  img_buffer's write_buffer
-        # TODO: use OpenCL to downsample the image on the GPU.
-        return np.zeros((self.cfg.sensor_row_count,
-                         self.cfg.sensor_column_count),
-                        dtype=self.cfg.image_dtype)
+        # TODO: consider using OpenCL to downsample the image on the GPU.
+        # Return a dummy image if none are available.
+        img_buffer = self.img_buffers.get(channel, None)
+        if not img_buffer or self.prev_frame_chunk_index is None:
+            return np.zeros((self.cfg.sensor_row_count,
+                             self.cfg.sensor_column_count),
+                            dtype=self.cfg.image_dtype)
+        else:
+            return img_buffer.write_buf[self.prev_frame_chunk_index]
 
     def close(self):
         """Safely close all open hardware connections."""
