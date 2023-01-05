@@ -144,25 +144,16 @@ class Exaspim(Spim):
         except MemoryError as e:
             self.log.error(e)
             raise
-        # TODO: these calcs should be in another function.
-        # Compute: micrometers per grid step. At 0 tile overlap, this is just
-        # the sensor's field of view.
-        x_grid_step_um = \
-            (1 - tile_overlap_x_percent/100.0) * self.cfg.tile_size_x_um
-        y_grid_step_um = \
-            (1 - tile_overlap_y_percent/100.0) * self.cfg.tile_size_y_um
-        # Compute step and tile count.
-        # Always round up so that we cover the desired imaging region.
-        xsteps = ceil((volume_x_um - self.cfg.tile_size_x_um)
-                      / x_grid_step_um)
-        ysteps = ceil((volume_y_um - self.cfg.tile_size_y_um)
-                      / y_grid_step_um)
-        zsteps = ceil((volume_z_um - z_step_size_um) / z_step_size_um)
-        xtiles, ytiles, ztiles = (1 + xsteps, 1 + ysteps, 1 + zsteps)
+        x_grid_step_um, y_grid_step_um = self.get_xy_grid_step(tile_overlap_x_percent,
+                                                               tile_overlap_y_percent)
+        xtiles, ytiles, ztiles = self.get_tile_counts(tile_overlap_x_percent,
+                                                      tile_overlap_y_percent,
+                                                      z_step_size_um,
+                                                      volume_x_um, volume_y_um,
+                                                      volume_z_um)
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
-        output_filenames = {}  # {<channel_name>: <filename_of_stack>}
         self.frame_index = 0  # Reset image index.
         start_time = perf_counter()  # For logging total time.
         self.ni.configure(frame_count=len(channels) * ztiles)
@@ -175,6 +166,7 @@ class Exaspim(Spim):
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
         # Create stacks of tiles along the z axis per channel.
+        # Transfer stacks as they arrive to their final destination.
         try:
             for y in range(ytiles):
                 self.sample_pose.move_absolute(y=round(self.stage_y_pos), wait=True)
@@ -189,7 +181,7 @@ class Exaspim(Spim):
                     output_filenames = \
                         self._collect_zstacks(channels, ztiles, z_step_size_um,
                                               chunk_size, stack_prefix)
-                    # Start transferring tiff file to its destination.
+                    # Start transferring zstack file to its destination.
                     # Note: Image transfer should be faster than image capture,
                     #   but we still wait for prior process to finish.
                     if stack_transfer_workers:
@@ -209,8 +201,8 @@ class Exaspim(Spim):
                             FileTransfer(local_storage_dir/filename,
                                          img_storage_dir/filename,
                                          self.cfg.ftp, self.cfg.ftp_flags)
-                    self.stage_x_pos += y_grid_step_um * UM_TO_STEPS
-                self.stage_y_pos += self.cfg.z_step_size_um * UM_TO_STEPS
+                    self.stage_x_pos += x_grid_step_um * UM_TO_STEPS
+                self.stage_y_pos += y_grid_step_um * UM_TO_STEPS
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
                           f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
@@ -263,7 +255,6 @@ class Exaspim(Spim):
         z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
         self.log.debug("Applying extra move to take out backlash.")
         self.sample_pose.move_absolute(z=round(z_backup_pos))
-        self.sample_pose.move_absolute(z=stage_z_pos)
         self.sample_pose.move_absolute(z=round(stage_z_pos))
         self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
                                                        z_step_size_um/1.0e3)
