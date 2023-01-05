@@ -1,8 +1,6 @@
-import datetime
 import copy
-from math import ceil
 from pathlib import Path
-from mesospim.config_base import SpimConfig
+from spim_core.config_base import SpimConfig
 
 # A template from which we can define a blank exaspim config.
 # TODO: create this.
