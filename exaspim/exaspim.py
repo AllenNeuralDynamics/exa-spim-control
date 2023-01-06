@@ -3,7 +3,6 @@
 import numpy as np
 import logging
 import traceback
-from math import ceil
 from pathlib import Path
 from psutil import virtual_memory
 from time import perf_counter, sleep
@@ -50,15 +49,15 @@ class Exaspim(Spim):
         self.frame_index = 0  # current image to capture.
         self.total_tiles = 0  # tiles to be captured.
         self.prev_frame_chunk_index = None  # chunk index of most recent frame.
-        self.stage_x_pos = None
-        self.stage_y_pos = None
+        self.stage_x_pos_um = None  # Current x position in [um]
+        self.stage_y_pos_um = None  # Curren y position in [um]
         # Setup hardware according to the config.
         self._setup_motion_stage()
         self._setup_camera()
 
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
-        # Note: tigerbox x axis is the sample pose z axis.
+        # Disable backlash compensation.
         self.sample_pose.set_axis_backlash(z=0)
 
     def __simulated_grab_frame(self):
@@ -151,6 +150,8 @@ class Exaspim(Spim):
                                                       z_step_size_um,
                                                       volume_x_um, volume_y_um,
                                                       volume_z_um)
+        self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
+                       f"{y_grid_step_um:.3f}[um] in y.")
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
@@ -161,7 +162,7 @@ class Exaspim(Spim):
         self.ni.assign_waveforms(voltages_t)
         # Reset the starting location.
         self.sample_pose.zero_in_place('x', 'y', 'z')
-        self.stage_x_pos, self.stage_y_pos = (0, 0)
+        self.stage_x_pos_um, self.stage_y_pos_um = (0, 0)
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
@@ -169,15 +170,17 @@ class Exaspim(Spim):
         # Transfer stacks as they arrive to their final destination.
         try:
             for y in range(ytiles):
-                self.sample_pose.move_absolute(y=round(self.stage_y_pos), wait=True)
-                self.stage_x_pos = 0
+                self.sample_pose.move_absolute(
+                    y=round(self.stage_y_pos_um*UM_TO_STEPS), wait=True)
+                self.stage_x_pos_um = 0
                 for x in range(xtiles):
-                    self.sample_pose.move_absolute(x=round(self.stage_x_pos), wait=True)
+                    self.sample_pose.move_absolute(
+                        x=round(self.stage_x_pos_um*UM_TO_STEPS), wait=True)
                     self.log.info(f"tile: ({x}, {y}); stage_position: "
-                                  f"({self.stage_x_pos:.3f}[um], "
-                                  f"{self.stage_y_pos:.3f}[um])")
+                                  f"({self.stage_x_pos_um:.3f}[um], "
+                                  f"{self.stage_y_pos_um:.3f}[um])")
                     stack_prefix = f"{tile_prefix}_" \
-                                   f"{self.stage_x_pos}_{self.stage_y_pos}"
+                                   f"{self.stage_x_pos_um:.4f}_{self.stage_y_pos_um:.4f}"
                     output_filenames = \
                         self._collect_zstacks(channels, ztiles, z_step_size_um,
                                               chunk_size, stack_prefix)
@@ -189,6 +192,7 @@ class Exaspim(Spim):
                                       "to complete.")
                         for channel_name, worker in stack_transfer_workers.items():
                             worker.join()
+                    # FIXME: we need to check this condition first
                     # Kick off Stack transfer processes per channel.
                     # Bail early if we don't need to transfer anything.
                     if not img_storage_dir or local_storage_dir == img_storage_dir:
@@ -201,8 +205,8 @@ class Exaspim(Spim):
                             FileTransfer(local_storage_dir/filename,
                                          img_storage_dir/filename,
                                          self.cfg.ftp, self.cfg.ftp_flags)
-                    self.stage_x_pos += x_grid_step_um * UM_TO_STEPS
-                self.stage_y_pos += y_grid_step_um * UM_TO_STEPS
+                    self.stage_x_pos_um += x_grid_step_um
+                self.stage_y_pos_um += y_grid_step_um
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
                           f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
@@ -273,7 +277,7 @@ class Exaspim(Spim):
             self.stack_writer_workers[ch] = \
                 StackWriter(self.cfg.sensor_row_count,
                             self.cfg.sensor_column_count,
-                            frame_count, self.stage_x_pos, self.stage_y_pos,
+                            frame_count, self.stage_x_pos_um, self.stage_y_pos_um,
                             self.cfg.x_voxel_size_um, self.cfg.y_voxel_size_um,
                             self.cfg.z_step_size_um,
                             self.cfg.compressor_chunk_size,
@@ -331,7 +335,7 @@ class Exaspim(Spim):
         finally:
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop()
-            self.ni.close()
+
             self.cam.stop()
             # Wait for stack writers to finish writing files to disk if capture
             # was successful.
@@ -386,5 +390,6 @@ class Exaspim(Spim):
         # Close any opened shared memory.
         for ch_name, buf in self.img_buffers.items():
             buf.close_and_unlink()
+        self.ni.close()
         # TODO: power down hardware.
         super().close()  # Call this last.

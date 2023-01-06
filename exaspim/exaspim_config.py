@@ -210,3 +210,34 @@ class ExaspimConfig(SpimConfig):
         # (dwell time [us]) / (line interval [us/pixel]) is slit width.
         # (slit width [pixels]) * (line interval [us/pixel]) * (1 [s]/1e6[us])
         return self.slit_width * self.camera_line_interval_us / 1.0e6
+
+    def sanity_check(self):
+        error_msgs = []
+        try:
+            super().sanity_check()
+        except AssertionError as e:
+            error_msgs.append(e)
+        # Proceed through ExaSPIM-specific checks:
+        # Check that slit width >0 but less than the camera's number of rows.
+        if self.slit_width <= 0 or self.slit_width > self.sensor_row_count:
+            msg = f"Slit width must be greater than zero but less than or " \
+                  f"equal to the number of rows ({self.sensor_row_count})."
+            self.log.error(msg)
+            error_msgs.append(msg)
+        # Check that backlash reset distance > 0.
+        if self.stage_backlash_reset_dist_um < 0:
+            msg = f"Stage backlash reset distance " \
+                  f"({self.stage_backlash_reset_dist_um} [um] must be greater" \
+                  f"than 0."
+            self.log.error(msg)
+            error_msgs.append(msg)
+
+        # TODO: Check that axis mapping has no repeat values.
+        # TODO: Check that waveform specs are > 0.
+        # TODO: Check that image stack chunk size is a multiple of 2
+
+        # Create a big error message at the end.
+        if error_msgs:
+            all_msgs = "\n".join(error_msgs)
+            raise AssertionError(all_msgs)
+

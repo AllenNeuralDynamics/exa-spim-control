@@ -176,14 +176,9 @@ class StackWriter(Process):
         # Compute the start/end extremes of the enclosed rectangular solid.
         # (x0, y0, z0) position (in [um]) of the beginning of the first voxel,
         # (xf, yf, zf) position (in [um]) of the end of the last voxel.
-        #x0 = self.cols * self.pixel_x_size_um * (y_tile) * (1 - self.cfg.y_overlap / 100)
-        #y0 = self.rows * self.pixel_y_size_um * (z_tile) * (1 - self.cfg.z_overlap / 100)
         x0 = self.first_img_centroid_x_um - (self.pixel_x_size_um * 0.5 * self.cols)
-        y0 = self.first_img_centroid_x_um - (self.pixel_y_size_um * 0.5 * self.rows)
+        y0 = self.first_img_centroid_y_um - (self.pixel_y_size_um * 0.5 * self.rows)
         z0 = 0
-        #xf = x0 + self.cfg.cam_x * self.cfg.pixel_x
-        #yf = y0 + self.cfg.cam_y * self.cfg.pixel_y
-        #zf = z0 + self.cfg.n_frames * self.cfg.pixel_z
         xf = self.first_img_centroid_x_um + (self.pixel_x_size_um * 0.5 * self.cols)
         yf = self.first_img_centroid_y_um + (self.pixel_y_size_um * 0.5 * self.rows)
         zf = z0 + self.img_count * self.pixel_z_size_um
