@@ -30,7 +30,7 @@ compression_style = 'lz4'
 
 [file_transfer_specs]
 protocol = 'xcopy'
-protocol_flags = '/j /i'
+protocol_flags = '/j/i'
 
 [camera_specs]
 egrabber_frame_buffer = 8

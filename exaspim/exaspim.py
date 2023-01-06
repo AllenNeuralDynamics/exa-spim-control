@@ -183,28 +183,30 @@ class Exaspim(Spim):
                                    f"{self.stage_x_pos_um:.4f}_{self.stage_y_pos_um:.4f}"
                     output_filenames = \
                         self._collect_zstacks(channels, ztiles, z_step_size_um,
-                                              chunk_size, stack_prefix)
+                                              chunk_size, local_storage_dir,
+                                              stack_prefix)
                     # Start transferring zstack file to its destination.
                     # Note: Image transfer should be faster than image capture,
                     #   but we still wait for prior process to finish.
                     if stack_transfer_workers:
                         self.log.info("Waiting for zstack transfer processes "
                                       "to complete.")
-                        for channel_name, worker in stack_transfer_workers.items():
+                        for channel in list(stack_transfer_workers.keys()):
+                            worker = stack_transfer_workers.pop(channel)
                             worker.join()
-                    # FIXME: we need to check this condition first
                     # Kick off Stack transfer processes per channel.
                     # Bail early if we don't need to transfer anything.
                     if not img_storage_dir or local_storage_dir == img_storage_dir:
                         self.log.info("Skipping file transfer process. File is "
                                       "already at its destination.")
                         continue
-                    for ch, filename in output_filenames.items():
-                        self.log.error(f"Starting transfer process for {filename}.")
-                        stack_transfer_workers[ch] = \
+                    for channel, filename in output_filenames.items():
+                        self.log.info(f"Starting transfer process for {filename}.")
+                        stack_transfer_workers[channel] = \
                             FileTransfer(local_storage_dir/filename,
                                          img_storage_dir/filename,
                                          self.cfg.ftp, self.cfg.ftp_flags)
+                        stack_transfer_workers[channel].start()
                     self.stage_x_pos_um += x_grid_step_um
                 self.stage_y_pos_um += y_grid_step_um
             # Acquisition cleanup.
@@ -226,6 +228,7 @@ class Exaspim(Spim):
 
     def _collect_zstacks(self, channels: list[int], frame_count: int,
                          z_step_size_um: float, chunk_size: int,
+                         local_storage_dir: Path,
                          stack_prefix: str):
         """Collect tile stack for every specified channel and write them to
         disk compressed through ImarisWriter.
@@ -248,6 +251,9 @@ class Exaspim(Spim):
         :param z_step_size_um: spacing between each step.
         :param chunk_size: the number of batch frames to send to
             the external compression process at a time.
+        :param local_storage_dir: the location to write the zstacks to.
+        :param stack_prefix: the filename prefix. ('_<channel>.ims' will be
+            appended to it.)
 
         :return: dict, keyed by channel name, of the filenames written to disk.
         """
@@ -284,7 +290,7 @@ class Exaspim(Spim):
                             chunk_dim_order,
                             self.cfg.compressor_thread_count,
                             self.cfg.compressor_style,
-                            self.cfg.datatype, self.img_storage_dir,
+                            self.cfg.datatype, local_storage_dir,
                             stack_file_names[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
             self.stack_writer_workers[ch].start()

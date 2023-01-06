@@ -21,11 +21,13 @@ class FileTransfer(Process):
     def run(self):
         if not os.path.isfile(self.src_path):
             raise FileNotFoundError(f"{self.src_path} does not exist.")
-        cmd_with_args = [self.ftp, str(self.src_path), str(self.dest_path),
+        # xcopy requires an asterisk to indicate source and destination are
+        # files, not directories.
+        cmd_with_args = [self.ftp, f'{self.src_path.absolute()}*', f'{self.dest_path.absolute()}*',
                          self.ftp_flags]
         # self.cmd = subprocess.Popen(self.cfg.ftp + ' ' + self.cfg.source_path + tile_name + '* ' + self.cfg.destination_path + ' ' + self.cfg.ftp_flags)
         print(f"Transferring {self.src_path} to storage in {self.dest_path}.")
-        self.cmd = subprocess.run(cmd_with_args)  # blocks.
+        self.cmd = subprocess.run(cmd_with_args, check=True)  # blocks.
         # Delete the old file so we don't run out of local storage.
         print(f"Deleting old file at {self.src_path}.")
         os.remove(self.src_path)
