@@ -11,6 +11,7 @@ from exaspim.exaspim_config import ExaspimConfig
 from exaspim.devices.camera import Camera
 from exaspim.devices.ni import NI
 from exaspim.operations.waveform_generator import generate_waveforms
+from exaspim.operations.gpu_img_downsample import DownSample
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
@@ -45,9 +46,10 @@ class Exaspim(Spim):
         self.sample_pose = SamplePose(self.tigerbox,
                                       **self.cfg.sample_pose_kwds)
         # Extra Internal State attributes for the current image capture
-        # sequence. These really only need to persist for logging purposes.
+        # sequence.
         self.frame_index = 0  # current image to capture.
         self.total_tiles = 0  # tiles to be captured.
+        self.downsampler = DownSample()
         self.prev_frame_chunk_index = None  # chunk index of most recent frame.
         self.stage_x_pos_um = None  # Current x position in [um]
         self.stage_y_pos_um = None  # Curren y position in [um]
@@ -372,24 +374,30 @@ class Exaspim(Spim):
         raise NotImplementedError
         #xy, xz, yz = (0,0), (0,0), (0,0)
 
-    def livestream(self):
+    def start_livestream(self):
         pass
 
-    def get_live_view_image(self, channel: int = None):
+    def stop_livestream(self):
+        pass
+
+    def get_latest_image(self, channel: int = None):
         """Return the most recent acquisition image for display elsewhere.
 
         :param channel: the channel to get the latest image for, or None,
             if only one channel is being imaged.
+
+        :return: downsample pyramid of the most recent image.
         """
         # TODO: consider using OpenCL to downsample the image on the GPU.
         # Return a dummy image if none are available.
         img_buffer = self.img_buffers.get(channel, None)
         if not img_buffer or self.prev_frame_chunk_index is None:
-            return np.zeros((self.cfg.sensor_row_count,
-                             self.cfg.sensor_column_count),
-                            dtype=self.cfg.image_dtype)
+            return self.downsampler.compute(
+                np.zeros((self.cfg.sensor_row_count, self.cfg.sensor_column_count),
+                         dtype=self.cfg.image_dtype))
         else:
-            return img_buffer.write_buf[self.prev_frame_chunk_index]
+            return self.downsampler.compute(
+                img_buffer.write_buf[self.prev_frame_chunk_index])
 
     def close(self):
         """Safely close all open hardware connections."""
