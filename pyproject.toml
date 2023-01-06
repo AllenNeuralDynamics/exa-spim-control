@@ -23,6 +23,7 @@ dependencies = [
     "thorlabs-apt >= 0.2",
     "tigerasi @ git+ssh://git@github.com/AllenNeuralDynamics/TigerASI.git@main#egg=TigerASI",
     "spim_core @ git+ssh://git@github.com/AllenNeuralDynamics/spim-core.git@main#egg=spim_core",
+    "gputools>=0.2.13",
     "nidaqmx >= 0.6.2",
     "numpy >= 1.22.3",
     "matplotlib >= 3.5.2",

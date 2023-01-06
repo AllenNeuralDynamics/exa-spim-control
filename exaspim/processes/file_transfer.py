@@ -23,6 +23,8 @@ class FileTransfer(Process):
             raise FileNotFoundError(f"{self.src_path} does not exist.")
         # xcopy requires an asterisk to indicate source and destination are
         # files, not directories.
+        # TODO: identify if xcopy src/dest are files or directories, and
+        #   annotate them as such.
         cmd_with_args = [self.ftp, f'{self.src_path.absolute()}*', f'{self.dest_path.absolute()}*',
                          self.ftp_flags]
         # self.cmd = subprocess.Popen(self.cfg.ftp + ' ' + self.cfg.source_path + tile_name + '* ' + self.cfg.destination_path + ' ' + self.cfg.ftp_flags)
