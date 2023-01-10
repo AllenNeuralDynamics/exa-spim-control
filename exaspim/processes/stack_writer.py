@@ -183,10 +183,10 @@ class StackWriter(Process):
         yf = self.first_img_centroid_y_um + (self.pixel_y_size_um * 0.5 * self.rows)
         zf = z0 + self.img_count * self.pixel_z_size_um
 
-        print(f"pixel x: {self.pixel_x_size_um}, pixel y: {self.pixel_y_size_um}")
-        print(f"cols: {self.cols}")
-        print(f"rows: {self.rows}")
-        print(f"Image extents: {x0}, {xf} | {y0}, {yf}")
+        # print(f"pixel x: {self.pixel_x_size_um}, pixel y: {self.pixel_y_size_um}")
+        # print(f"cols: {self.cols}")
+        # print(f"rows: {self.rows}")
+        # print(f"Image extents: {x0}, {xf} | {y0}, {yf}")
 
         # Wait for file writing to finish.
         if self.callback_class.progress < 1.0:

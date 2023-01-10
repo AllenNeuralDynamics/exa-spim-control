@@ -123,8 +123,6 @@ class Exaspim(Spim):
                                       self.img_storage_dir,
                                       self.deriv_storage_dir)
 
-    # TODO: z grid step size should get passed in as a parameter rather than
-    #   being read from the config.
     def collect_volumetric_image(self, volume_x_um: float, volume_y_um: float,
                                  volume_z_um: float,
                                  channels: list[int],
@@ -154,7 +152,11 @@ class Exaspim(Spim):
                                                       volume_z_um)
         self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
                        f"{y_grid_step_um:.3f}[um] in y.")
+        self.log.debug(f"Imaging operation will produce: "
+                       f"{xtiles} xtiles, {ytiles} ytiles, and {ztiles} ztiles"
+                       f"per channel.")
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
+        self.log.debug(f"Total tiles: {self.total_tiles}.")
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
         self.frame_index = 0  # Reset image index.
@@ -306,7 +308,8 @@ class Exaspim(Spim):
                 chunk_index = stack_index % chunk_size
                 # Deserialize camera input into corresponding channel.
                 for ch_index in channels:
-                    self.log.debug(f"Grabbing frame {stack_index} for "
+                    self.log.debug(f"Grabbing frame "
+                                   f"{stack_index + 1:9}/{frame_count} for "
                                    f"{ch_index}[nm] channel.")
                     self.img_buffers[ch_index].write_buf[chunk_index] = \
                         self.cam.grab_frame()

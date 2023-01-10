@@ -2,15 +2,15 @@
 # No repeat values in here!
 [imaging_specs]
 local_storage_directory = "D:\\"
-external_storage_directory = "."#"X:\\"
-subject_id = "hw_test" # Specimin name.
+external_storage_directory = "Y:\\"
+subject_id = "test_exaspim_tiling" # Specimin name.
 tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.tiff.
-tile_overlap_x_percent = 50
-tile_overlap_y_percent = 50
+tile_overlap_x_percent = 95
+tile_overlap_y_percent = 95
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
 volume_x_um = 10616 # 10615.616
 volume_y_um = 7959 # 7958.72
-volume_z_um = 64
+volume_z_um = 15000
 laser_wavelengths = [488]# [488, 561]
 
 [design_specs]
