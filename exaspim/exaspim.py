@@ -15,7 +15,7 @@ from exaspim.operations.gpu_img_downsample import DownSample
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
-from math import ceil
+from math import ceil, floor
 from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
 from tigerasi.sim_tiger_controller import TigerController as SimTiger
 from spim_core.spim_base import Spim
@@ -297,26 +297,27 @@ class Exaspim(Spim):
                             stack_file_names[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
             self.stack_writer_workers[ch].start()
-        chunk_count = ceil(frame_count/float(chunk_size))
+        chunk_count = ceil(frame_count/chunk_size)
         last_frame_index = frame_count - 1
-        last_chunk_index = chunk_count - 1
         remainder = frame_count % chunk_size
-        last_chunk_size = chunk_size if remainder == 0 else remainder
+        last_chunk_size = chunk_size if not remainder else remainder
         start_time = perf_counter()
         self.cam.start(frame_count, live=False)  # TODO: rewrite to block until ready.
         try:
             # Images arrive serialized in repeating channel order.
-            for frame_index in range(frame_count):
-                chunk_index = frame_index % chunk_size
+            for stack_index in range(frame_count):
+                chunk_index = stack_index % chunk_size
                 # Start a batch of pulses to generate more frames and movements.
                 if chunk_index == 0:
-                    num_pulses = chunk_size if chunk_index != last_chunk_index else last_chunk_size
+                    chunks_filled = floor(stack_index/chunk_size)
+                    remaining_chunks = chunk_count - chunks_filled
+                    num_pulses = last_chunk_size if remaining_chunks == 1 else chunk_size
                     self.ni.set_pulse_count(num_pulses)
                     self.ni.start()
                 # Deserialize camera input into corresponding channel.
                 for ch_index in channels:
                     self.log.debug(f"Grabbing frame "
-                                   f"{frame_index + 1:9}/{frame_count} for "
+                                   f"{stack_index + 1:9}/{frame_count} for "
                                    f"{ch_index}[nm] channel.")
                     self.img_buffers[ch_index].write_buf[chunk_index] = \
                         self.cam.grab_frame()
@@ -326,12 +327,12 @@ class Exaspim(Spim):
                 self.frame_index += 1
                 # Dispatch either a full chunk of frames or the last chunk,
                 # which may not be a multiple of the chunk size.
-                if chunk_index == chunk_size - 1 or frame_index == last_frame_index:
+                if chunk_index == chunk_size - 1 or stack_index == last_frame_index:
                     self.ni.stop(wait=True)
                     # Wait for z stack writing to finish before dispatching
                     # more data.
                     if not self._all_stack_workers_idle():
-                        final = "final " if frame_index == last_frame_index else ""
+                        final = "final " if stack_index == last_frame_index else ""
                         self.log.warning(f"Waiting for {final}chunk to be "
                                          f"compressed to disk.")
                     while not self._all_stack_workers_idle():
@@ -353,8 +354,8 @@ class Exaspim(Spim):
             raise
         finally:
             self.log.debug("Closing devices and processes for this stack.")
-            self.ni.stop(wait=True)
             self.cam.stop()
+            self.ni.stop(wait=True)
             # Wait for stack writers to finish writing files to disk if capture
             # was successful.
             timeout = None if capture_successful else IMARIS_TIMEOUT_S

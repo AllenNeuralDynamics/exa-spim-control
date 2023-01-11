@@ -1,3 +1,4 @@
+import logging
 import nidaqmx
 from nidaqmx.constants import FrequencyUnits as Freq
 from nidaqmx.constants import Level
@@ -18,6 +19,7 @@ class NI:
         :param ao_channels: dict in the form of
             {<analog output name>: <analog output channel>}.
         """
+        self.log = logging.getLogger(__name__ + "." + self.__class__.__name__)
         self.dev_name = dev_name
         self.samples_per_sec = samples_per_sec
         self.period_time_s = period_time_s
@@ -76,6 +78,7 @@ class NI:
             unspecified, the counter pulses continuously.
         :return:
         """
+        self.log.debug(f"Setting counter task count to {pulse_count} pulses.")
         optional_kwds = {}
         # Don't specify samps_per_chan to use default value if it was specified
         # as 0 or None.
