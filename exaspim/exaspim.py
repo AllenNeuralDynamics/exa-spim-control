@@ -15,6 +15,7 @@ from exaspim.operations.gpu_img_downsample import DownSample
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
+from math import ceil
 from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
 from tigerasi.sim_tiger_controller import TigerController as SimTiger
 from spim_core.spim_base import Spim
@@ -161,7 +162,7 @@ class Exaspim(Spim):
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
         self.frame_index = 0  # Reset image index.
         start_time = perf_counter()  # For logging total time.
-        self.ni.configure(frame_count=len(channels) * ztiles)
+        self.ni.configure()
         voltages_t = generate_waveforms(self.cfg, plot=True)
         self.ni.assign_waveforms(voltages_t)
         # Reset the starting location.
@@ -221,12 +222,6 @@ class Exaspim(Spim):
             raise
         finally:
             self.sample_pose.move_absolute(x=0, y=0, wait=True)
-            # for ch in list(self.img_buffers.keys()):
-            #     self.log.debug(f"Deallocating {ch}[nm] shared double buffer.")
-            #     self.img_buffers[ch].close_and_unlink()
-            #     del self.img_buffers[ch]
-            # # TODO: flag a thread-safe event that we are no longer able to livestream.
-            # self.img_buffers = {}  # Disables live view.
         # Write MIPs to files.
         # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
         # for ch, mip_data in mips.items():
@@ -302,18 +297,22 @@ class Exaspim(Spim):
                             stack_file_names[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
             self.stack_writer_workers[ch].start()
+        chunk_count = ceil(frame_count/float(chunk_size))
+        last_frame_index = frame_count - 1
+        last_chunk_index = chunk_count - 1
+        remainder = frame_count % chunk_size
+        last_chunk_size = chunk_size if remainder == 0 else remainder
         start_time = perf_counter()
+        self.cam.start(frame_count, live=False)  # TODO: rewrite to block until ready.
         try:
-            self.cam.start(frame_count, live=False)  # TODO: rewrite to block until ready.
-            self.ni.start()  # TODO: move this into inner chunk loop.
             # Images arrive serialized in repeating channel order.
-            last_frame_index = frame_count - 1
-            # TODO: we probably want to rewrite this loop to be chunk-centric.
             for frame_index in range(frame_count):
                 chunk_index = frame_index % chunk_size
-                # TODO: setup NI counter to output current chunk's worth of pulses.
-                # self.ni.set_pulse_count(num_pulses)
-                # self.ni.start()
+                # Start a batch of pulses to generate more frames and movements.
+                if chunk_index == 0:
+                    num_pulses = chunk_size if chunk_index != last_chunk_index else last_chunk_size
+                    self.ni.set_pulse_count(num_pulses)
+                    self.ni.start()
                 # Deserialize camera input into corresponding channel.
                 for ch_index in channels:
                     self.log.debug(f"Grabbing frame "
@@ -328,6 +327,7 @@ class Exaspim(Spim):
                 # Dispatch either a full chunk of frames or the last chunk,
                 # which may not be a multiple of the chunk size.
                 if chunk_index == chunk_size - 1 or frame_index == last_frame_index:
+                    self.ni.stop(wait=True)
                     # Wait for z stack writing to finish before dispatching
                     # more data.
                     if not self._all_stack_workers_idle():
@@ -353,7 +353,7 @@ class Exaspim(Spim):
             raise
         finally:
             self.log.debug("Closing devices and processes for this stack.")
-            self.ni.stop()
+            self.ni.stop(wait=True)
             self.cam.stop()
             # Wait for stack writers to finish writing files to disk if capture
             # was successful.

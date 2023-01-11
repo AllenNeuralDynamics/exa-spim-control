@@ -27,7 +27,7 @@ class NI:
         self.co_task = None
         self.ao_task = None
 
-    def configure(self, frame_count: int = None, live: bool = False):
+    def configure(self, live: bool = False):
         """Configure the NI card to play either `frame_count` frames or
         continuously.
 
@@ -37,7 +37,6 @@ class NI:
             must be left unspecified in this case. Otherwise, play the
             waveforms for the specified `frame_count`.
         """
-        # TODO: how do we generate multiple pulses for multichannel images?
         self.co_task = nidaqmx.Task('counter_output_task')
         co_chan = self.co_task.co_channels.add_co_pulse_chan_freq(
             f'/{self.dev_name}/ctr0',
@@ -48,9 +47,8 @@ class NI:
             duty_cycle=0.5)
         co_chan.co_pulse_term = f'/{self.dev_name}/PFI0'
 
-        self.co_task.timing.cfg_implicit_timing(
-            sample_mode=AcqType.CONTINUOUS if live else AcqType.FINITE,
-            samps_per_chan=frame_count)
+        if live:
+            self.set_pulse_count(pulse_count=0)
 
         self.ao_task = nidaqmx.Task("analog_output_task")
         for channel_name, channel_index in self.ao_names_to_channels.items():
@@ -71,6 +69,25 @@ class NI:
     def assign_waveforms(self, voltages_t):
         self.ao_task.write(voltages_t)
 
+    def set_pulse_count(self, pulse_count: int = None):
+        """Set the number of pulses to generate or None if pulsing continuously.
+
+        :param pulse_count: The number of pulses to generate. If 0 or
+            unspecified, the counter pulses continuously.
+        :return:
+        """
+        optional_kwds = {}
+        # Don't specify samps_per_chan to use default value if it was specified
+        # as 0 or None.
+        if pulse_count:
+            optional_kwds['samps_per_chan'] = pulse_count
+        self.co_task.timing.cfg_implicit_timing(
+            sample_mode=AcqType.FINITE if pulse_count else AcqType.CONTINUOUS,
+            **optional_kwds)
+
+    def wait_until_done(self, timeout=1.0):
+        return self.co_task.wait_until_done(timeout)
+
     def start(self):
         if self.ao_task:
             self.ao_task.start()
@@ -79,13 +96,18 @@ class NI:
         if self.co_task:
             self.co_task.start()
 
-    def stop(self):
-        if self.co_task:
-            self.co_task.stop()
-        # time.sleep(2*(self.daq_samples/self.update_freq)) # wait for last AO to play
-        # print(2*(self.daq_samples/self.update_freq))
-        if self.ao_task:
-            self.ao_task.stop()
+    def stop(self, wait: bool = True):
+        """Stop the tasks. Optional: try waiting first before stopping."""
+        try:
+            if wait:
+                self.wait_until_done()
+        finally:
+            if self.co_task:
+                self.co_task.stop()
+            # time.sleep(2*(self.daq_samples/self.update_freq)) # wait for last AO to play
+            # print(2*(self.daq_samples/self.update_freq))
+            if self.ao_task:
+                self.ao_task.stop()
 
     def close(self):
         if self.co_task:

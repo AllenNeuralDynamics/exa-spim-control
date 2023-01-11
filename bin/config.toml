@@ -3,14 +3,14 @@
 [imaging_specs]
 local_storage_directory = "D:\\"
 external_storage_directory = "Y:\\"
-subject_id = "test_exaspim_tiling_1k" # Specimin name.
+subject_id = "test_exaspim_tiling_15k" # Specimin name.
 tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.tiff.
 tile_overlap_x_percent = 95
 tile_overlap_y_percent = 95
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
 volume_x_um = 10616 # 10615.616
 volume_y_um = 7959 # 7958.72
-volume_z_um = 1000 # long term: chunk size must be multiple of 2048
+volume_z_um = 15000 # long term: chunk size must be multiple of 2048
 laser_wavelengths = [488]# [488, 561]
 
 [design_specs]
@@ -22,7 +22,7 @@ frame_rest_time_s = 0.050
 buffer_time_s = 0.05
 
 [compressor_specs]
-image_stack_chunk_size = 128
+image_stack_chunk_size = 64
 #image_stack_chunk_size = 32
 memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
 compressor_thread_count = 32
