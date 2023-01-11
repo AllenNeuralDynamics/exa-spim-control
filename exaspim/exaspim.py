@@ -216,12 +216,17 @@ class Exaspim(Spim):
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
                           f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
+        except Exception:
+            self.log.exception("Error raised from the main acquisition loop.")
+            raise
         finally:
             self.sample_pose.move_absolute(x=0, y=0, wait=True)
-            self.log.debug("Deallocating shared memory.")
-            for _, buf in self.img_buffers.items():
-                buf.close_and_unlink()
-            self.img_buffers = {}  # Disables live view.
+            # for ch in list(self.img_buffers.keys()):
+            #     self.log.debug(f"Deallocating {ch}[nm] shared double buffer.")
+            #     self.img_buffers[ch].close_and_unlink()
+            #     del self.img_buffers[ch]
+            # # TODO: flag a thread-safe event that we are no longer able to livestream.
+            # self.img_buffers = {}  # Disables live view.
         # Write MIPs to files.
         # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
         # for ch, mip_data in mips.items():
@@ -273,7 +278,6 @@ class Exaspim(Spim):
         self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
                                                        z_step_size_um/1.0e3)
         self.setup_imaging_hardware()
-
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
             stack_file_names[ch] = f"{stack_prefix}_{ch}.ims"
@@ -301,15 +305,19 @@ class Exaspim(Spim):
         start_time = perf_counter()
         try:
             self.cam.start(frame_count, live=False)  # TODO: rewrite to block until ready.
-            self.ni.start()
+            self.ni.start()  # TODO: move this into inner chunk loop.
             # Images arrive serialized in repeating channel order.
             last_frame_index = frame_count - 1
-            for stack_index in range(frame_count):
-                chunk_index = stack_index % chunk_size
+            # TODO: we probably want to rewrite this loop to be chunk-centric.
+            for frame_index in range(frame_count):
+                chunk_index = frame_index % chunk_size
+                # TODO: setup NI counter to output current chunk's worth of pulses.
+                # self.ni.set_pulse_count(num_pulses)
+                # self.ni.start()
                 # Deserialize camera input into corresponding channel.
                 for ch_index in channels:
                     self.log.debug(f"Grabbing frame "
-                                   f"{stack_index + 1:9}/{frame_count} for "
+                                   f"{frame_index + 1:9}/{frame_count} for "
                                    f"{ch_index}[nm] channel.")
                     self.img_buffers[ch_index].write_buf[chunk_index] = \
                         self.cam.grab_frame()
@@ -319,11 +327,11 @@ class Exaspim(Spim):
                 self.frame_index += 1
                 # Dispatch either a full chunk of frames or the last chunk,
                 # which may not be a multiple of the chunk size.
-                if chunk_index == chunk_size - 1 or stack_index == last_frame_index:
+                if chunk_index == chunk_size - 1 or frame_index == last_frame_index:
                     # Wait for z stack writing to finish before dispatching
                     # more data.
                     if not self._all_stack_workers_idle():
-                        final = "final " if stack_index == last_frame_index else ""
+                        final = "final " if frame_index == last_frame_index else ""
                         self.log.warning(f"Waiting for {final}chunk to be "
                                          f"compressed to disk.")
                     while not self._all_stack_workers_idle():
@@ -341,12 +349,11 @@ class Exaspim(Spim):
             self.log.debug(f"Stack imaging time: "
                            f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
         except Exception:
-            traceback.print_exc()
+            self.log.exception("Error raised from the stack acquisition loop.")
             raise
         finally:
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop()
-
             self.cam.stop()
             # Wait for stack writers to finish writing files to disk if capture
             # was successful.
@@ -357,6 +364,11 @@ class Exaspim(Spim):
                 level = logging.DEBUG if capture_successful else logging.WARNING
                 self.log.log(level, msg)
                 worker.join(timeout=timeout)
+            # TODO: flag a thread-safe event that we are no longer able to livestream.
+            for ch in list(self.img_buffers.keys()):
+                self.log.debug(f"Deallocating {ch}[nm] stack shared double buffer.")
+                self.img_buffers[ch].close_and_unlink()
+                del self.img_buffers[ch]
             # Leave the sample in the starting position.
             # Apply lead-in move to take out z backlash.
             z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um

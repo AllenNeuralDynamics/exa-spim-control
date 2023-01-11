@@ -169,7 +169,8 @@ class StackWriter(Process):
             dim_order = [self.dim_map[x] for x in self.chunk_dim_order]
             # Put the frames back into x, y, z, c, t order.
             self.converter.CopyBlock(frames.transpose(dim_order), block_index)
-            print(f"copyblock took {perf_counter() - start_time:.3f}[s].")
+            print(f"Ch{self.channel_name} Writing chunk took "
+                  f"{perf_counter() - start_time:.3f}[s].")
             shm.close()
             self.done_reading.set()
         # Compression cleanup:

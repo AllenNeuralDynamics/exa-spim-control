@@ -18,6 +18,8 @@ class Camera:
 		self.grabber.realloc_buffers(self.cfg.egrabber_frame_buffer) # allocate RAM buffer N frames
 		# Note: Msb unpacking is slightly faster according to camera vendor.
 		self.grabber.stream.set("UnpackingMode", "Msb") # msb packing of 12-bit data
+		# TODO: bit rate
+		# grabber.RemotePort.set("PixelFormat", "Mono14");
 		# Frame rate setting does not need to be set in external trigger mode.
 		# TODO: round exposure time to one decimal place.
 		self.grabber.remote.set("ExposureTime", self.cfg.camera_dwell_time*1.0e6) # set exposure time us, i.e. slit width
@@ -48,8 +50,9 @@ class Camera:
 		"""Retrieve a frame as a 2D numpy array with shape (rows, cols)."""
 		# Note: creating the buffer and then "pushing" it at the end has the
 		# 	effect of moving the internal camera frame buffer from the output
-		# 	pool back to the input pool so it can be reused.
-		buffer = Buffer(self.grabber, timeout = int(1.0e7))
+		# 	pool back to the input pool, so it can be reused.
+		timeout_ms = int(30e3)
+		buffer = Buffer(self.grabber, timeout=timeout_ms)
 		ptr = buffer.get_info(BUFFER_INFO_BASE, INFO_DATATYPE_PTR) # grab pointer to new frame
 		data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cfg.sensor_column_count*self.cfg.sensor_row_count*2)).contents # grab frame data
 		image = numpy.frombuffer(data, count=int(self.cfg.sensor_column_count*self.cfg.sensor_row_count), dtype=numpy.uint16).reshape((self.cfg.sensor_row_count,self.cfg.sensor_column_count)) # cast data to numpy array of correct size/datatype, push to numpy buffer
