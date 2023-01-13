@@ -1,122 +1,69 @@
-# Exa-Spim Config
-# No repeat values in here!
 [imaging_specs]
 local_storage_directory = "D:\\"
-external_storage_directory = "Y:\\"
-subject_id = "test_exaspim_tiling_15k" # Specimin name.
-tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.tiff.
+external_storage_directory = "C:\\Users\\micah.woodard\\PycharmProjects\\exaSpim-UI"
+subject_id = "hw_test"
+tile_prefix = "tile"
 tile_overlap_x_percent = 95
-tile_overlap_y_percent = 95
-z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
-volume_x_um = 10616 # 10615.616
-volume_y_um = 7958.72
-volume_z_um = 15000 # long term: chunk size must be multiple of 2048
-laser_wavelengths = [488]# [488, 561]
+tile_overlap_y_percent = 15
+z_step_size_um = 1
+volume_x_um = 7959
+volume_y_um = 10615.616
+volume_z_um = 64
+laser_wavelengths = [ 488,]
 
 [design_specs]
-slit_width_pixels = 333.3 # pixels.
+slit_width_pixels = 333.3
 
 [waveform_specs]
-ttl_pulse_time_s = 0.010
-frame_rest_time_s = 0.050
+ttl_pulse_time_s = 0.01
+frame_rest_time_s = 0.05
 buffer_time_s = 0.05
 
 [compressor_specs]
-image_stack_chunk_size = 128
-#image_stack_chunk_size = 32
-memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
+image_stack_chunk_size = 64
+memento_executable_path = "C:\\Program Files\\Euresys\\Mementox08in\\86_64\\memento.exe"
 compressor_thread_count = 32
-compression_style = 'lz4'
+compression_style = "lz4"
 
 [file_transfer_specs]
-protocol = 'xcopy'
-protocol_flags = '/j/i/y'
+protocol = "xcopy"
+protocol_flags = "/j /i"
 
 [camera_specs]
 egrabber_frame_buffer = 8
-unpacking_mode = 'Msb'
+unpacking_mode = "Msb"
 autoscale = false
-method = 'Full'
-digital_gain_adu = 1
-# bit-depth should be set here.
-line_interval_us = 15  # bit-depth specific. cannot be changed. we should hide this.
+method = "Full"
+digital_gain_adu = 0
+line_interval_us = 15
 
 [tile_specs]
-x_field_of_view_um = 10615.616 # X image field of view in [um].
-y_field_of_view_um = 7958.72 # Y image field of view in [um].
+x_field_of_view_um = 7958.72
+y_field_of_view_um = 10615.616
 row_count_pixels = 10640
-column_count_pixels = 14192
+column_count_pixels = 14194
 data_type = "uint16"
 
-# Stage
 [sample_stage_specs]
-move_time_um = 0.025 # time it takes the stage to move 1[um] and settle.
-backlash_reset_distance_um = 4 # [um]
+move_time_um = 0.025
+backlash_reset_distance_um = 4
 
-# Laser Channel specific settings
-[channel_specs.488]
-driver = "Oxxius"
-color = "blue"
-hex_color = "#00ff92"
-#filter_index = 2
-ao_channel = 3
-disable_voltage = 0.0
-enable_voltage =  5.0
-buffer_time_s = 0.001
-[channel_specs.488.camera]
-delay_time_s = 0
-[channel_specs.488.etl]
-delay = 0.0  # seconds.
-settling_time = 0.025  # seconds.
-min_voltage = 2.37
-max_voltage = 2.96
-amplitude = 0.171
-offset = 2.422
-nonlinear = -0.007
-interp_time_s = 0.5
-buffer_time_s = 0.05
-[channel_specs.488.gavlo_a]
-setpoint = 0.0
-[channel_specs.488.galvo_b]
-setpoint = 0.0
-[channel_specs.488.kwds]
-port='COMxx'
-
-[channel_specs.561]
-driver = "Oxxius"
-color = "yellow-green"
-hex_color = "#c6ff00"
-#filter_index = 2
-ao_channel = 5
-disable_voltage = 0.0
-enable_voltage =  5.0
-buffer_time_s = 0.001
-[channel_specs.561.camera]
-delay_time_s = 0
-[channel_specs.561.etl]
-delay = 0.0  # seconds.
-settling_time = 0.025  # seconds.
-min_voltage = 2.37
-max_voltage = 2.96
-amplitude = 0.171
-offset = 2.422
-nonlinear = -0.007
-interp_time_s = 0.5
-[channel_specs.561.gavlo_a]
-setpoint = 0.0
-[channel_specs.561.galvo_b]
-setpoint = 0.0
-[channel_specs.561.kwds]
-port='COMxx'
-
-[daq_ao_names_to_channels] # lookup table for named hardware to AO channels
+[daq_ao_names_to_channels]
 etl = 1
-# This will be further populated with the laser ao channels from channel_specs at runtime.
 
-# <SOMETHING>_kwds will be splatted with **kwds to init the corresponding object.
 [daq_driver_kwds]
-dev_name = 'Dev1' # NI Card address as it appears to the PC.
-samples_per_sec = 1e4
+dev_name = "Dev1"
+samples_per_sec = 10000.0
+
+[tiger_controller_driver_kwds]
+com_port = "COM3"
+
+[filter_wheel_kwds]
+tiger_axis = 1
+
+[estimates]
+tiles_per_second = 15
+
 [daq_driver_kwds.ao_channels]
 etl = 0
 camera = 1
@@ -126,17 +73,70 @@ stage = 2
 561 = 5
 405 = 6
 
-[tiger_controller_driver_kwds]
-com_port='COM3'
+[channel_specs.488]
+driver = "Oxxius"
+color = "blue"
+hex_color = "#00ff92"
+ao_channel = 3
+disable_voltage = 0.0
+enable_voltage = 5.0
+buffer_time_s = 0.001
+
+[channel_specs.561]
+driver = "Oxxius"
+color = "yellowgreen"
+hex_color = "#c6ff00"
+ao_channel = 5
+disable_voltage = 0.0
+enable_voltage = 5.0
+buffer_time_s = 0.001
 
 [sample_pose_kwds.axis_map]
 x = "y"
 y = "z"
 z = "x"
 
-[filter_wheel_kwds]
-tiger_axis = 1 # filterwheel axis according to the tigerbox.
+[channel_specs.488.camera]
+delay_time_s = 0
 
-# For imaging run estimations.
-[estimates]
-tiles_per_second = 15
+[channel_specs.488.etl]
+delay = 0.0
+settling_time = 0.026
+min_voltage = 2.35
+max_voltage = 2.96
+amplitude = 0.172
+offset = 2.422
+nonlinear = -0.007
+interp_time_s = 0.6
+buffer_time_s = 0.05
+
+[channel_specs.488.gavlo_a]
+setpoint = 0.0
+
+[channel_specs.488.galvo_b]
+setpoint = 0.0
+
+[channel_specs.488.kwds]
+port = "COMxx"
+
+[channel_specs.561.camera]
+delay_time_s = 0
+
+[channel_specs.561.etl]
+delay = 0.0
+settling_time = 0.025
+min_voltage = 2.37
+max_voltage = 2.96
+amplitude = 0.171
+offset = 2.422
+nonlinear = -0.007
+interp_time_s = 0.5
+
+[channel_specs.561.gavlo_a]
+setpoint = 0.0
+
+[channel_specs.561.galvo_b]
+setpoint = 0.0
+
+[channel_specs.561.kwds]
+port = "COMxx"

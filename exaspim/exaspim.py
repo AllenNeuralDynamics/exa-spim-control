@@ -12,6 +12,7 @@ from exaspim.devices.camera import Camera
 from exaspim.devices.ni import NI
 from exaspim.operations.waveform_generator import generate_waveforms
 from exaspim.operations.gpu_img_downsample import DownSample
+from threading import Event
 from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
@@ -47,13 +48,17 @@ class Exaspim(Spim):
         self.sample_pose = SamplePose(self.tigerbox,
                                       **self.cfg.sample_pose_kwds)
         # Extra Internal State attributes for the current image capture
-        # sequence.
+        # sequence. These really only need to persist for logging purposes.
         self.frame_index = 0  # current image to capture.
         self.total_tiles = 0  # tiles to be captured.
         self.downsampler = DownSample()
         self.prev_frame_chunk_index = None  # chunk index of most recent frame.
         self.stage_x_pos_um = None  # Current x position in [um]
         self.stage_y_pos_um = None  # Curren y position in [um]
+        self.start_pos = None       # Start position of scan
+        self.livestream_enabled = Event()
+        self.active_laser = None
+
         # Setup hardware according to the config.
         self._setup_motion_stage()
         self._setup_camera()
@@ -83,9 +88,18 @@ class Exaspim(Spim):
             self.cam.print_statistics.return_value = "No simulated statistics."
             self.cam.grab_frame = self.__simulated_grab_frame
 
-    def setup_imaging_hardware(self):
-        """provision the daq according to the dataset we are going to collect."""
-        pass
+    def _setup_waveform_hardware(self, active_wavelength: int = None, live: bool = False):
+
+        self.active_lasers = [active_wavelength] if live else self.cfg.channels
+        self.log.info("Configuring NIDAQ")
+        self.ni.configure(live=live)
+        self.log.info("Generating waveforms.")
+        voltages_t = generate_waveforms(self.cfg, plot=False, channels = self.active_lasers)
+        self.log.info("Writing waveforms to hardware.")
+        self.ni.assign_waveforms(voltages_t)
+
+        if live:
+            self.ni.start()
 
     def _check_system_memory_resources(self, channel_count: int,
                                        mem_chunk: int):
@@ -165,6 +179,12 @@ class Exaspim(Spim):
         self.ni.configure()
         voltages_t = generate_waveforms(self.cfg, plot=True)
         self.ni.assign_waveforms(voltages_t)
+
+        # Move sample to preset starting position
+        if self.start_pos is not None:
+            self.sample_pose.move_absolute(self.start_pos)
+            self.start_pos = None
+
         # Reset the starting location.
         self.sample_pose.zero_in_place('x', 'y', 'z')
         self.stage_x_pos_um, self.stage_y_pos_um = (0, 0)
@@ -272,7 +292,7 @@ class Exaspim(Spim):
         self.sample_pose.move_absolute(z=round(stage_z_pos))
         self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
                                                        z_step_size_um/1.0e3)
-        self.setup_imaging_hardware()
+        self._setup_waveform_hardware()
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
             stack_file_names[ch] = f"{stack_prefix}_{ch}.ims"
@@ -390,13 +410,25 @@ class Exaspim(Spim):
         raise NotImplementedError
         #xy, xz, yz = (0,0), (0,0), (0,0)
 
-    def start_livestream(self):
-        pass
+    def start_livestream(self, wavelength):
 
-    def stop_livestream(self):
-        pass
+        if wavelength not in self.cfg.possible_channels:
+            self.log.error(f"Aborting. {wavelength}[nm] laser is not a valid "
+                           "laser.")
+            return
+        # Bail early if it's started.
+        if self.livestream_enabled.is_set():
+            self.log.warning("Not starting. Livestream is already running.")
+            return
+        self.log.debug("Starting livestream.")
+        self.log.warning(f"Turning on the {wavelength}[nm] laser.")
+        self._setup_waveform_hardware(wavelength, live=True)
+        self.ni.start()
+        self.livestream_enabled.set()
+        self.active_laser = wavelength
+        # Launch thread for picking up camera images.
 
-    def get_latest_image(self, channel: int = None):
+    def _livestream_worker(self, channel: int = None):
         """Return the most recent acquisition image for display elsewhere.
 
         :param channel: the channel to get the latest image for, or None,
@@ -406,14 +438,29 @@ class Exaspim(Spim):
         """
         # TODO: consider using OpenCL to downsample the image on the GPU.
         # Return a dummy image if none are available.
-        img_buffer = self.img_buffers.get(channel, None)
-        if not img_buffer or self.prev_frame_chunk_index is None:
-            return self.downsampler.compute(
-                np.zeros((self.cfg.sensor_row_count, self.cfg.sensor_column_count),
-                         dtype=self.cfg.image_dtype))
-        else:
-            return self.downsampler.compute(
-                img_buffer.write_buf[self.prev_frame_chunk_index])
+        while self.livestream_enabled.is_set():
+
+            img_buffer = self.img_buffers.get(channel, None)
+            if not img_buffer or self.prev_frame_chunk_index is None:
+
+                yield self.downsampler.compute(np.random.randint(0,255, size=(self.cfg.sensor_row_count,
+                                  self.cfg.sensor_column_count), dtype=self.cfg.image_dtype))
+            else:
+                yield self.downsampler.compute(
+                    img_buffer.write_buf[self.prev_frame_chunk_index])
+
+    def stop_livestream(self):
+        # Bail early if it's already stopped.
+        if not self.livestream_enabled.is_set():
+            self.log.warning("Not starting. Livestream is already stopped.")
+            return
+
+        self.livestream_enabled.clear()
+        self.cam.stop()
+
+        self.ni.stop()
+        self.ni.close()
+        self.active_laser = None
 
     def close(self):
         """Safely close all open hardware connections."""
