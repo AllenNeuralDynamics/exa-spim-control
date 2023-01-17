@@ -161,7 +161,7 @@ class StackWriter(Process):
             while self.done_reading.is_set():
                 sleep(0.001)
             # Attach a reference to the data from shared memory.
-            shm = SharedMemory(self.shm_name, size=self.shm_nbytes)
+            shm = SharedMemory(self.shm_name, create=False, size=self.shm_nbytes)
             frames = np.ndarray(self.shm_shape, self.dtype, buffer=shm.buf)
             print(f"Ch{self.channel_name} writing chunk "
                   f"{chunk_num+1}/{chunk_count} of size {frames.shape}.")
@@ -169,6 +169,7 @@ class StackWriter(Process):
             dim_order = [self.dim_map[x] for x in self.chunk_dim_order]
             # Put the frames back into x, y, z, c, t order.
             self.converter.CopyBlock(frames.transpose(dim_order), block_index)
+            frames = None
             print(f"Ch{self.channel_name} Writing chunk took "
                   f"{perf_counter() - start_time:.3f}[s].")
             shm.close()
@@ -199,7 +200,7 @@ class StackWriter(Process):
             print(f"Ch{self.channel_name} Waiting for data writing to complete for "
                   f"channel {self.channel_name}[nm] channel."
                   f"Current progress is {self.callback_class.progress:.3f}.")
-        print(f"Ch{self.channel_name} Writing image extents and closing file.")
+        print(f"Ch{self.channel_name} Writing image extents.")
         image_extents = pw.ImageExtents(-x0, -y0, -z0, -xf, -yf, -zf)
         adjust_color_range = False
         parameters = pw.Parameters()
@@ -213,4 +214,6 @@ class StackWriter(Process):
         self.converter.Finish(image_extents, parameters, time_infos,
                               color_infos, adjust_color_range)
         self.converter.Destroy()
+        print(f"Ch{self.channel_name} stack compression complete.")
+
 

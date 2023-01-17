@@ -28,6 +28,7 @@ class SharedDoubleBuffer:
         """
         # Overflow errors without casting for large datasets
         nbytes = int(np.prod(shape, dtype=np.int64)*np.dtype(dtype).itemsize)
+        #print(f"Creating shared memory. Size is: {nbytes/(1024**3)} gigabytes")
         self.mem_blocks = \
             [
                 SharedMemory(create=True, size=nbytes),

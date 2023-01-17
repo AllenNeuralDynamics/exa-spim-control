@@ -4,7 +4,8 @@ import numpy as np
 import logging
 import traceback
 from pathlib import Path
-from psutil import virtual_memory
+from psutil import virtual_memory, Process
+from os import getpid
 from time import perf_counter, sleep
 from mock import NonCallableMock as Mock
 from exaspim.exaspim_config import ExaspimConfig
@@ -261,6 +262,7 @@ class Exaspim(Spim):
 
         :return: dict, keyed by channel name, of the filenames written to disk.
         """
+        self.log.debug(f"Stack Capture starting memory usage: {self.get_mem_consumption():.3f}%")
         stack_file_names = {}  # names of the files we will create.
         # Flow Control flags.
         capture_successful = False
@@ -302,7 +304,7 @@ class Exaspim(Spim):
         remainder = frame_count % chunk_size
         last_chunk_size = chunk_size if not remainder else remainder
         start_time = perf_counter()
-        self.cam.start(frame_count, live=False)  # TODO: rewrite to block until ready.
+        self.cam.start(len(channels)*frame_count, live=False)  # TODO: rewrite to block until ready.
         try:
             # Images arrive serialized in repeating channel order.
             for stack_index in range(frame_count):
@@ -312,6 +314,8 @@ class Exaspim(Spim):
                     chunks_filled = floor(stack_index/chunk_size)
                     remaining_chunks = chunk_count - chunks_filled
                     num_pulses = last_chunk_size if remaining_chunks == 1 else chunk_size
+                    self.log.debug(f"Grabbing chunk {chunks_filled+1}/{chunk_count}")
+                    self.log.debug(f"Current memory usage: {self.get_mem_consumption():.3f}%")
                     self.ni.set_pulse_count(num_pulses)
                     self.ni.start()
                 # Deserialize camera input into corresponding channel.
@@ -319,7 +323,7 @@ class Exaspim(Spim):
                     self.log.debug(f"Grabbing frame "
                                    f"{stack_index + 1:9}/{frame_count} for "
                                    f"{ch_index}[nm] channel.")
-                    self.img_buffers[ch_index].write_buf[chunk_index] = \
+                    self.img_buffers[ch_index].write_buf[chunk_index][:] = \
                         self.cam.grab_frame()
                 # Save the index of the most-recently captured frame to
                 # offer it to a live display upon request.
@@ -354,8 +358,8 @@ class Exaspim(Spim):
             raise
         finally:
             self.log.debug("Closing devices and processes for this stack.")
-            self.cam.stop()
             self.ni.stop(wait=True)
+            self.cam.stop()
             # Wait for stack writers to finish writing files to disk if capture
             # was successful.
             timeout = None if capture_successful else IMARIS_TIMEOUT_S
@@ -376,6 +380,7 @@ class Exaspim(Spim):
             self.log.debug("Applying extra move to take out backlash.")
             self.sample_pose.move_absolute(z=round(z_backup_pos))
             self.sample_pose.move_absolute(z=0)
+            self.log.debug(f"Stack Capture ending memory usage: {self.get_mem_consumption():.3f}%")
         return stack_file_names
 
     def _all_stack_workers_idle(self):
@@ -414,6 +419,15 @@ class Exaspim(Spim):
         else:
             return self.downsampler.compute(
                 img_buffer.write_buf[self.prev_frame_chunk_index])
+
+    def get_mem_consumption(self):
+        """get memory consumption as a percent for this process and all
+        child processes."""
+        current_process = Process(getpid())
+        mem = current_process.memory_percent()
+        for child in current_process.children(recursive=True):
+            mem += child.memory_percent()
+        return mem
 
     def close(self):
         """Safely close all open hardware connections."""

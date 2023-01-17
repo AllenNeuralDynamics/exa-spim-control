@@ -52,13 +52,12 @@ class Camera:
 		# 	effect of moving the internal camera frame buffer from the output
 		# 	pool back to the input pool, so it can be reused.
 		timeout_ms = int(30e3)
-		buffer = Buffer(self.grabber, timeout=timeout_ms)
-		ptr = buffer.get_info(BUFFER_INFO_BASE, INFO_DATATYPE_PTR) # grab pointer to new frame
-		data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cfg.sensor_column_count*self.cfg.sensor_row_count*2)).contents # grab frame data
-		image = numpy.frombuffer(data, count=int(self.cfg.sensor_column_count*self.cfg.sensor_row_count), dtype=numpy.uint16).reshape((self.cfg.sensor_row_count,self.cfg.sensor_column_count)) # cast data to numpy array of correct size/datatype, push to numpy buffer
-		self.tstamp = buffer.get_info(BUFFER_INFO_TIMESTAMP, INFO_DATATYPE_SIZET) # grab new frame time stamp
-		buffer.push()
-		return image
+		with Buffer(self.grabber, timeout=timeout_ms) as buffer:
+			ptr = buffer.get_info(BUFFER_INFO_BASE, INFO_DATATYPE_PTR) # grab pointer to new frame
+			data = ct.cast(ptr, ct.POINTER(ct.c_ubyte*self.cfg.sensor_column_count*self.cfg.sensor_row_count*2)).contents # grab frame data
+			image = numpy.frombuffer(data, count=int(self.cfg.sensor_column_count*self.cfg.sensor_row_count), dtype=numpy.uint16).reshape((self.cfg.sensor_row_count,self.cfg.sensor_column_count)) # cast data to numpy array of correct size/datatype, push to numpy buffer
+			self.tstamp = buffer.get_info(BUFFER_INFO_TIMESTAMP, INFO_DATATYPE_SIZET) # grab new frame time stamp
+			return image
 
 	def stop(self):
 		self.grabber.stop()

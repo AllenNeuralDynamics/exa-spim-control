@@ -3,15 +3,15 @@
 [imaging_specs]
 local_storage_directory = "D:\\"
 external_storage_directory = "Y:\\"
-subject_id = "test_exaspim_tiling_15k" # Specimin name.
-tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.tiff.
+subject_id = "test_exaspim" #"test_exaspim_15k_64_2ch" # Specimin name.
+tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.ims.
 tile_overlap_x_percent = 95
 tile_overlap_y_percent = 95
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
-volume_x_um = 10616 # 10615.616
-volume_y_um = 7958.72
-volume_z_um = 15000 # long term: chunk size must be multiple of 2048
-laser_wavelengths = [488]# [488, 561]
+volume_x_um = 10616# 10615.616
+volume_y_um = 7959 #7958.72
+volume_z_um = 20000 # long term: chunk size must be multiple of 2048
+laser_wavelengths = [488, 561]#, 638, 405]# [488, 561]
 
 [design_specs]
 slit_width_pixels = 333.3 # pixels.
@@ -22,7 +22,7 @@ frame_rest_time_s = 0.050
 buffer_time_s = 0.05
 
 [compressor_specs]
-image_stack_chunk_size = 128
+image_stack_chunk_size = 64#32#16
 #image_stack_chunk_size = 32
 memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
 compressor_thread_count = 32
@@ -102,12 +102,70 @@ amplitude = 0.171
 offset = 2.422
 nonlinear = -0.007
 interp_time_s = 0.5
+buffer_time_s = 0.05
 [channel_specs.561.gavlo_a]
 setpoint = 0.0
 [channel_specs.561.galvo_b]
 setpoint = 0.0
 [channel_specs.561.kwds]
 port='COMxx'
+
+[channel_specs.405]
+driver = "Oxxius"
+color = "purple"
+hex_color = "#000000"
+#filter_index = 2
+ao_channel = 6
+disable_voltage = 0.0
+enable_voltage =  5.0
+buffer_time_s = 0.001
+[channel_specs.405.camera]
+delay_time_s = 0
+[channel_specs.405.etl]
+delay = 0.0  # seconds.
+settling_time = 0.025  # seconds.
+min_voltage = 2.37
+max_voltage = 2.96
+amplitude = 0.171
+offset = 2.422
+nonlinear = -0.007
+interp_time_s = 0.5
+buffer_time_s = 0.05
+[channel_specs.405.gavlo_a]
+setpoint = 0.0
+[channel_specs.405.galvo_b]
+setpoint = 0.0
+[channel_specs.405.kwds]
+port='COMxx'
+
+[channel_specs.638]
+driver = "Oxxius"
+color = "red"
+hex_color = "#000000"
+#filter_index = 2
+ao_channel = 4
+disable_voltage = 0.0
+enable_voltage =  5.0
+buffer_time_s = 0.001
+[channel_specs.638.camera]
+delay_time_s = 0
+[channel_specs.638.etl]
+delay = 0.0  # seconds.
+settling_time = 0.025  # seconds.
+min_voltage = 2.37
+max_voltage = 2.96
+amplitude = 0.171
+offset = 2.422
+nonlinear = -0.007
+interp_time_s = 0.5
+buffer_time_s = 0.05
+[channel_specs.638.gavlo_a]
+setpoint = 0.0
+[channel_specs.638.galvo_b]
+setpoint = 0.0
+[channel_specs.638.kwds]
+port='COMxx'
+
 
 [daq_ao_names_to_channels] # lookup table for named hardware to AO channels
 etl = 1
