@@ -16,7 +16,7 @@ logging.getLogger().handlers.clear()
 
 class SpimLogFilter(logging.Filter):
     # Note: add additional modules that we want to catch here.
-    VALID_LOGGER_BASES = {'spim_core', 'exaspim', 'tigerasi'}
+    VALID_LOGGER_BASES = {'spim_core', 'exaspim', 'camera', 'tigerasi'}
 
     def filter(self, record):
         """Returns true for a record that matches a log we want to keep."""

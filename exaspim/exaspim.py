@@ -51,6 +51,7 @@ class Exaspim(Spim):
         # sequence.
         self.frame_index = 0  # current image to capture.
         self.total_tiles = 0  # tiles to be captured.
+        self.dropped_frames = 0
         self.downsampler = DownSample()
         self.prev_frame_chunk_index = None  # chunk index of most recent frame.
         self.stage_x_pos_um = None  # Current x position in [um]
@@ -157,12 +158,14 @@ class Exaspim(Spim):
         self.log.debug(f"Imaging operation will produce: "
                        f"{xtiles} xtiles, {ytiles} ytiles, and {ztiles} ztiles"
                        f"per channel.")
+        # Update internal state.
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         self.log.debug(f"Total tiles: {self.total_tiles}.")
+        self.frame_index = 0  # Reset image index.
+        self.dropped_frames = 0
+        start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
-        self.frame_index = 0  # Reset image index.
-        start_time = perf_counter()  # For logging total time.
         self.ni.configure()
         voltages_t = generate_waveforms(self.cfg, plot=True)
         self.ni.assign_waveforms(voltages_t)
@@ -185,8 +188,7 @@ class Exaspim(Spim):
                     self.log.info(f"tile: ({x}, {y}); stage_position: "
                                   f"({self.stage_x_pos_um:.3f}[um], "
                                   f"{self.stage_y_pos_um:.3f}[um])")
-                    stack_prefix = f"{tile_prefix}_" \
-                                   f"{self.stage_x_pos_um:.4f}_{self.stage_y_pos_um:.4f}"
+                    stack_prefix = f"{tile_prefix}_{x:04}_{y:04}"
                     output_filenames = \
                         self._collect_zstacks(channels, ztiles, z_step_size_um,
                                               chunk_size, local_storage_dir,
@@ -325,6 +327,7 @@ class Exaspim(Spim):
                                    f"{ch_index}[nm] channel.")
                     self.img_buffers[ch_index].write_buf[chunk_index][:] = \
                         self.cam.grab_frame()
+                self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
                 # offer it to a live display upon request.
                 self.prev_frame_chunk_index = chunk_index
@@ -369,6 +372,7 @@ class Exaspim(Spim):
                 level = logging.DEBUG if capture_successful else logging.WARNING
                 self.log.log(level, msg)
                 worker.join(timeout=timeout)
+                # TODO: process termination upon failure?
             # TODO: flag a thread-safe event that we are no longer able to livestream.
             for ch in list(self.img_buffers.keys()):
                 self.log.debug(f"Deallocating {ch}[nm] stack shared double buffer.")
@@ -387,6 +391,15 @@ class Exaspim(Spim):
         """Helper function. True if all StackWriters are idle."""
         return all([w.done_reading.is_set()
                     for _, w in self.stack_writer_workers.items()])
+
+    def _check_camera_acquisition_state(self):
+        """Get the current eGrabber state. Raise a runtime error if we drop frames."""
+        state = self.cam.get_camera_acquisition_state()  # logs it.
+        if self.dropped_frames > state['dropped_frames']:
+            self.dropped_frames = state['dropped_frames']
+            msg = "Acquisition loop has dropped a frame."
+            self.log.error(msg)
+            raise RuntimeError(msg)
 
     def _compute_mip_shapes(self, volume_x: float, volume_y: float,
                             volume_z: float, percent_x_overlap: float,
@@ -409,7 +422,6 @@ class Exaspim(Spim):
 
         :return: downsample pyramid of the most recent image.
         """
-        # TODO: consider using OpenCL to downsample the image on the GPU.
         # Return a dummy image if none are available.
         img_buffer = self.img_buffers.get(channel, None)
         if not img_buffer or self.prev_frame_chunk_index is None:
