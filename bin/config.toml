@@ -10,7 +10,7 @@ tile_overlap_y_percent = 15
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
 volume_x_um = 10615.616
 volume_y_um = 7958.72
-volume_z_um = 1000 # long term: chunk size must be multiple of 2048
+volume_z_um = 100 # long term: chunk size must be multiple of 2048
 laser_wavelengths = [488, 561, 638, 405]# [488, 561]
 
 [design_specs]
@@ -26,7 +26,7 @@ image_stack_chunk_size = 64#32#16
 #image_stack_chunk_size = 32 # good for 4-channel.
 memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
 compressor_thread_count = 32
-compression_style = 'lz4'
+compression_style = "lz4"
 
 [file_transfer_specs]
 protocol = 'xcopy'
@@ -61,7 +61,7 @@ hex_color = "#00ff92"
 #filter_index = 2
 ao_channel = 3
 disable_voltage = 0.0
-enable_voltage =  5.0
+enable_voltage = 5.0
 buffer_time_s = 0.001
 [channel_specs.488.camera]
 delay_time_s = 0
@@ -80,11 +80,11 @@ setpoint = 0.0
 [channel_specs.488.galvo_b]
 setpoint = 0.0
 [channel_specs.488.kwds]
-port='COMxx'
+port = "COMxx"
 
 [channel_specs.561]
 driver = "Oxxius"
-color = "yellow-green"
+color = "yellowgreen"
 hex_color = "#c6ff00"
 #filter_index = 2
 ao_channel = 5
