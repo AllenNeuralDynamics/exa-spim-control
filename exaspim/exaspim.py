@@ -203,18 +203,18 @@ class Exaspim(Spim):
                             worker = stack_transfer_workers.pop(channel)
                             worker.join()
                     # Kick off Stack transfer processes per channel.
-                    # Bail early if we don't need to transfer anything.
-                    if not img_storage_dir or local_storage_dir == img_storage_dir:
-                        self.log.info("Skipping file transfer process. File is "
-                                      "already at its destination.")
-                        continue
-                    for channel, filename in output_filenames.items():
-                        self.log.info(f"Starting transfer process for {filename}.")
-                        stack_transfer_workers[channel] = \
-                            FileTransfer(local_storage_dir/filename,
-                                         img_storage_dir/filename,
-                                         self.cfg.ftp, self.cfg.ftp_flags)
-                        stack_transfer_workers[channel].start()
+                    # Bail if we don't need to transfer anything.
+                    if img_storage_dir:
+                        for channel, filename in output_filenames.items():
+                            self.log.info(f"Starting transfer process for {filename}.")
+                            stack_transfer_workers[channel] = \
+                                FileTransfer(local_storage_dir/filename,
+                                             img_storage_dir/filename,
+                                             self.cfg.ftp, self.cfg.ftp_flags)
+                            stack_transfer_workers[channel].start()
+                    else:
+                        self.log.info("Skipping file transfer process. File "
+                                      "is already at its destination.")
                     self.stage_x_pos_um += x_grid_step_um
                 self.stage_y_pos_um += y_grid_step_um
             # Acquisition cleanup.
@@ -327,7 +327,7 @@ class Exaspim(Spim):
                                    f"{ch_index}[nm] channel.")
                     self.img_buffers[ch_index].write_buf[chunk_index][:] = \
                         self.cam.grab_frame()
-                self._check_camera_acquisition_state()
+                    self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
                 # offer it to a live display upon request.
                 self.prev_frame_chunk_index = chunk_index
@@ -395,7 +395,7 @@ class Exaspim(Spim):
     def _check_camera_acquisition_state(self):
         """Get the current eGrabber state. Raise a runtime error if we drop frames."""
         state = self.cam.get_camera_acquisition_state()  # logs it.
-        if self.dropped_frames > state['dropped_frames']:
+        if state['dropped_frames'] > self.dropped_frames:
             self.dropped_frames = state['dropped_frames']
             msg = "Acquisition loop has dropped a frame."
             self.log.error(msg)

@@ -66,7 +66,7 @@ class Camera:
             image = numpy.frombuffer(data, count=int(self.cfg.sensor_column_count * self.cfg.sensor_row_count),
                                      dtype=numpy.uint16).reshape((self.cfg.sensor_row_count,
                                                                   self.cfg.sensor_column_count))
-            self.tstamp = buffer.get_info(BUFFER_INFO_TIMESTAMP, INFO_DATATYPE_SIZET)  # grab new frame time stamp
+            #self.tstamp = buffer.get_info(BUFFER_INFO_TIMESTAMP, INFO_DATATYPE_SIZET)  # grab new frame time stamp
             return image
 
     def stop(self):
@@ -76,17 +76,21 @@ class Camera:
 
     def get_camera_acquisition_state(self):
         """return a dict with the state of the acquisition buffers"""
+        # Detailed description of constants here:
+        # https://documentation.euresys.com/Products/Coaxlink/Coaxlink/en-us/Content/IOdoc/egrabber-reference/namespace_gen_t_l.html#a6b498d9a4c08dea2c44566722699706e
         state = {}
         state['frame_index'] = self.grabber.stream.get_info(STREAM_INFO_NUM_DELIVERED, INFO_DATATYPE_SIZET)
-        state['frames_in_buffer'] = self.grabber.stream.get_info(STREAM_INFO_NUM_QUEUED,
-                                                                 INFO_DATATYPE_SIZET)  # number of available frames in ram buffer
+        state['in_buffer_size'] = self.grabber.stream.get_info(STREAM_INFO_NUM_QUEUED,
+                                                               INFO_DATATYPE_SIZET)
+        state['out_buffer_size'] = self.grabber.stream.get_info(STREAM_INFO_NUM_AWAIT_DELIVERY,
+                                                                INFO_DATATYPE_SIZET)
         state['dropped_frames'] = self.grabber.stream.get_info(STREAM_INFO_NUM_UNDERRUN,
                                                                INFO_DATATYPE_SIZET)  # number of underrun, i.e. dropped frames
         state['data_rate'] = self.grabber.stream.get('StatisticsDataRate')  # stream data rate
         state['frame_rate'] = self.grabber.stream.get('StatisticsFrameRate')  # stream frame rate
         self.log.debug(f"frame: {state['frame_index']}, "
-                       f"frames in buffer: {state['frames_in_buffer']}, "
-                       f"queued frames: {state['frames_in_buffer']}, "
+                       f"input buffer size: {state['in_buffer_size']}, "
+                       f"output buffer size: {state['out_buffer_size']}, "
                        f"dropped_frames: {state['dropped_frames']}, "
                        f"data rate: {state['data_rate']:.2f} [MB/s], "
                        f"frame rate: {state['frame_rate']:.2f} [fps].")

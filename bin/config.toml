@@ -8,10 +8,10 @@ tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength
 tile_overlap_x_percent = 15
 tile_overlap_y_percent = 15
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
-volume_x_um = 10616# 10615.616
+volume_x_um = 10616 #10615.616
 volume_y_um = 7959 #7958.72
-volume_z_um = 100 # long term: chunk size must be multiple of 2048
-laser_wavelengths = [488, 561]#, 638, 405]# [488, 561]
+volume_z_um = 1000 # long term: chunk size must be multiple of 2048
+laser_wavelengths = [488, 561, 638, 405]# [488, 561]
 
 [design_specs]
 slit_width_pixels = 333.3 # pixels.
@@ -23,7 +23,7 @@ buffer_time_s = 0.05
 
 [compressor_specs]
 image_stack_chunk_size = 64#32#16
-#image_stack_chunk_size = 32
+#image_stack_chunk_size = 32 # good for 4-channel.
 memento_executable_path = "C:\\Program Files\\Euresys\\Memento\\bin\\x86_64\\memento.exe"
 compressor_thread_count = 32
 compression_style = 'lz4'
@@ -183,6 +183,11 @@ stage = 2
 638 = 4
 561 = 5
 405 = 6
+# Hardware tested successfully. But leave commented out for now.
+# Galvos are wired but we need to be careful in the NI waveform generator and UI to never
+# issue a large step change above 100 mW to protect mirrors.
+# galvo_a = 17
+# galvo_b = 19
 
 [tiger_controller_driver_kwds]
 com_port='COM3'
