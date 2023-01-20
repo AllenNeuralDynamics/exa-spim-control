@@ -6,7 +6,7 @@ This program has substantial platform memory requirements (~103 GB for 4 channel
 These ram requirements are largely due to the chunk size of the online compressor (ImarisWriter) which performs best with larger chunks.
 Recommended requirements are:
 * CPU with 8 cores
-* 128 GB of ram
+* 128 GB of ram, ideally on a single memory card
 
 ## Installation
 From this folder install this python package with:
