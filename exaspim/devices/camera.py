@@ -22,6 +22,8 @@ class Camera:
         self.grabber.realloc_buffers(self.cfg.egrabber_frame_buffer)  # allocate RAM buffer N frames
         # Note: Msb unpacking is slightly faster according to camera vendor.
         self.grabber.stream.set("UnpackingMode", "Msb")  # msb packing of 12-bit data
+        self.grabber.remote.set("Width", self.cfg.sensor_column_count)
+        self.grabber.remote.set("Height", self.cfg.sensor_row_count)
         # TODO: bit rate
         # grabber.RemotePort.set("PixelFormat", "Mono14");
         # Frame rate setting does not need to be set in external trigger mode.

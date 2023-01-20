@@ -51,7 +51,6 @@ class Exaspim(Spim):
         # sequence.
         self.frame_index = 0  # current image to capture.
         self.total_tiles = 0  # tiles to be captured.
-        self.dropped_frames = 0
         self.downsampler = DownSample()
         self.prev_frame_chunk_index = None  # chunk index of most recent frame.
         self.stage_x_pos_um = None  # Current x position in [um]
@@ -82,7 +81,7 @@ class Exaspim(Spim):
         self.cam.configure()
         if self.simulated:
             self.last_frame_time = perf_counter()
-            self.cam.print_statistics.return_value = "No simulated statistics."
+            self.cam.get_camera_acquisition_state.return_value = {'dropped_frames': 0}
             self.cam.grab_frame = self.__simulated_grab_frame
 
     def setup_imaging_hardware(self):
@@ -162,7 +161,6 @@ class Exaspim(Spim):
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         self.log.debug(f"Total tiles: {self.total_tiles}.")
         self.frame_index = 0  # Reset image index.
-        self.dropped_frames = 0
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
@@ -325,7 +323,7 @@ class Exaspim(Spim):
                     self.log.debug(f"Grabbing frame "
                                    f"{stack_index + 1:9}/{frame_count} for "
                                    f"{ch_index}[nm] channel.")
-                    self.img_buffers[ch_index].write_buf[chunk_index][:] = \
+                    self.img_buffers[ch_index].write_buf[chunk_index] = \
                         self.cam.grab_frame()
                     self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
@@ -395,8 +393,7 @@ class Exaspim(Spim):
     def _check_camera_acquisition_state(self):
         """Get the current eGrabber state. Raise a runtime error if we drop frames."""
         state = self.cam.get_camera_acquisition_state()  # logs it.
-        if state['dropped_frames'] > self.dropped_frames:
-            self.dropped_frames = state['dropped_frames']
+        if state['dropped_frames'] > 0:
             msg = "Acquisition loop has dropped a frame."
             self.log.error(msg)
             raise RuntimeError(msg)
