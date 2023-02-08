@@ -135,13 +135,13 @@ class ExaspimConfig(SpimConfig):
         """number of images in a chunk to be compressed at a time."""
         return self.compressor_specs['image_stack_chunk_size']
 
-    @property
-    def memento_path(self) -> Path:
-        return Path(self.compressor_specs['memento_executable_path'])
-
-    @memento_path.setter
-    def memento_path(self, path: Path):
-        self.compressor_specs['memento_path'] = str(path.absolute())
+    # @property
+    # def memento_path(self) -> Path:
+    #     return Path(self.compressor_specs['memento_executable_path'])
+    #
+    # @memento_path.setter
+    # def memento_path(self, path: Path):
+    #     self.compressor_specs['memento_path'] = str(path.absolute())
 
     # Tile Specs
     @property
@@ -205,6 +205,7 @@ class ExaspimConfig(SpimConfig):
 
     @property
     def camera_dwell_time(self):
+        """The time in seconds that a given row is exposed to the laser."""
         # FIXME: this could be removed if derive the calculation from
         #   slit width in the waveform_generator.
         # (dwell time [us]) / (line interval [us/pixel]) is slit width.

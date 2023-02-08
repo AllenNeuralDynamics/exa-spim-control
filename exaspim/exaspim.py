@@ -58,6 +58,7 @@ class Exaspim(Spim):
         self.stage_y_pos_um = None  # Curren y position in [um]
         self.start_pos = None       # Start position of scan
         self.livestream_enabled = Event()
+        self.acquiring_images = False
         self.active_laser = None
 
         # Setup hardware according to the config.
@@ -99,9 +100,6 @@ class Exaspim(Spim):
         self.log.info("Writing waveforms to hardware.")
         self.ni.assign_waveforms(voltages_t)
 
-        if live:
-            self.ni.start()
-
     def _check_system_memory_resources(self, channel_count: int,
                                        mem_chunk: int):
         """Make sure this machine can image under the specified configuration.
@@ -123,6 +121,25 @@ class Exaspim(Spim):
                               "the specified number of channels. "
                               f"{used_mem_gigabytes:.1f}[GB] are required but "
                               f"{free_mem_gigabytes:.1f}[GB] are available.")
+
+    def apply_config(self):
+        """Apply the new state present in the config."""
+        # Check to see what changed and apply the new changes safely.
+        # TODO: pull changes from config and apply them directly in a safe way.
+        #   Throw an error otherwise.
+        # TODO: lockout access to state changes if we are unable to change them
+        #   i.e: we are acquiring images and cannot change the hardware settings.
+        if self.acquiring_images:
+            raise RuntimeError("Cannot change system configuration while "
+                               "acquiring images.")
+        if self.livestream_enabled:
+            self.cam.stop()
+        self.cam.configure()  # configures from config.
+        if self.livestream_enabled:
+            active_laser = self.active_laser
+            self.stop_livestream()
+            self.start_livestream(active_laser)  # reapplies waveform settings.
+            self.cam.start(live=self.livestream_enabled.is_set())
 
     def run_from_config(self):
         self.collect_volumetric_image(self.cfg.volume_x_um,
@@ -176,6 +193,7 @@ class Exaspim(Spim):
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         self.log.debug(f"Total tiles: {self.total_tiles}.")
         self.frame_index = 0  # Reset image index.
+        self.acquiring_images = True
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
@@ -241,6 +259,8 @@ class Exaspim(Spim):
             raise
         finally:
             self.sample_pose.move_absolute(x=0, y=0, wait=True)
+            # Cleanup internal state.
+            self.acquiring_images = False
         # Write MIPs to files.
         # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
         # for ch, mip_data in mips.items():
@@ -422,7 +442,7 @@ class Exaspim(Spim):
         raise NotImplementedError
         #xy, xz, yz = (0,0), (0,0), (0,0)
 
-    def start_livestream(self, wavelength):
+    def start_livestream(self, wavelength: int = None):
 
         if wavelength not in self.cfg.possible_channels:
             self.log.error(f"Aborting. {wavelength}[nm] laser is not a valid "
@@ -434,7 +454,8 @@ class Exaspim(Spim):
             return
         self.log.debug("Starting livestream.")
         self.log.warning(f"Turning on the {wavelength}[nm] laser.")
-        self._setup_waveform_hardware(wavelength, live=True)
+        self._setup_waveform_hardware([wavelength], live=True)
+        self.cam.start(live=True)
         self.ni.start()
         self.livestream_enabled.set()
         self.active_laser = wavelength
@@ -450,28 +471,38 @@ class Exaspim(Spim):
         """
         # Return a dummy image if none are available.
         while self.livestream_enabled.is_set():
-
-            img_buffer = self.img_buffers.get(channel, None)
-            if not img_buffer or self.prev_frame_chunk_index is None:
-
-                yield self.downsampler.compute(np.random.randint(0,255, size=(self.cfg.sensor_row_count,
-                                  self.cfg.sensor_column_count), dtype=self.cfg.image_dtype))
-            else:
-                yield self.downsampler.compute(
-                    img_buffer.write_buf[self.prev_frame_chunk_index])
+            yield self.get_latest_image()
+        print("exiting livestream worker.")
 
     def stop_livestream(self):
         # Bail early if it's already stopped.
         if not self.livestream_enabled.is_set():
-            self.log.warning("Not starting. Livestream is already stopped.")
+            self.log.warning("Not stopping. Livestream is already stopped.")
             return
-
         self.livestream_enabled.clear()
         self.cam.stop()
-
-        self.ni.stop()
+        self.ni.stop(wait=False)
+        sleep(1)  # This is a hack.
         self.ni.close()
         self.active_laser = None
+
+    def get_latest_image(self, channel: int = None):
+        """Return the most recent acquisition image for display elsewhere.
+        :param channel: the channel to get the latest image for, or None,
+            if only one channel is being imaged.
+        :return: downsample pyramid of the most recent image.
+        """
+        img_buffer = self.img_buffers.get(channel, None)  # Not None during acquisition.
+        if img_buffer:
+            return self.downsampler.compute(img_buffer.write_buf[self.prev_frame_chunk_index])
+        # Return a dummy image if none are available.
+        if not img_buffer or self.prev_frame_chunk_index is None:
+            if self.livestream_enabled.is_set():
+                return self.downsampler.compute(self.cam.grab_frame())
+            else:
+                # Display "white noise" if no image is available.
+                return self.downsampler.compute(np.random.randint(0,255, size=(self.cfg.sensor_row_count,
+                                      self.cfg.sensor_column_count), dtype=self.cfg.image_dtype))
 
     def get_mem_consumption(self):
         """get memory consumption as a percent for this process and all

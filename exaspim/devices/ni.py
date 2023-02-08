@@ -91,6 +91,7 @@ class NI:
     def wait_until_done(self, timeout=1.0):
         return self.co_task.wait_until_done(timeout)
 
+
     def start(self):
         if self.ao_task:
             self.ao_task.start()
