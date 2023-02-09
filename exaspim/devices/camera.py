@@ -22,7 +22,8 @@ class Camera:
         self.grabber.realloc_buffers(self.cfg.egrabber_frame_buffer)  # allocate RAM buffer N frames
         # Note: Msb unpacking is slightly faster according to camera vendor.
         self.grabber.stream.set("UnpackingMode", "Msb")  # msb packing of 12-bit data
-        self.grabber.remote.set("Width", self.cfg.sensor_column_count)
+        self.grabber.remote.set("OffsetX", 0)
+        self.grabber.remote.set("Width", int(self.cfg.sensor_column_count))
         self.grabber.remote.set("Height", self.cfg.sensor_row_count)
         # TODO: bit rate
         # grabber.RemotePort.set("PixelFormat", "Mono14");
@@ -34,10 +35,6 @@ class Camera:
         if self.grabber.remote.get("TriggerMode") != "On":  # set camera to external trigger mode
             self.grabber.remote.set("TriggerMode", "On")
         self.grabber.remote.set("Gain", self.cfg.camera_digital_gain)  # set digital gain to 1
-
-    # TODO: we need to implement this somehow in the config
-    # self.grabber.remote.set("OffsetX", "0")
-    # self.grabber.remote.set("Width", "14192")
 
     # TODO: put the datalogger here.
     # data_logger is for the camera. It needs to exist between:
