@@ -18,7 +18,7 @@ from exaspim.processes.stack_writer import StackWriter
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
 from math import ceil, floor
-from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
+from tigerasi.tiger_controller import TigerController, STEPS_PER_UM
 from tigerasi.sim_tiger_controller import TigerController as SimTiger
 from spim_core.spim_base import Spim
 from spim_core.devices.tiger_components import SamplePose
@@ -61,6 +61,7 @@ class Exaspim(Spim):
         self.acquiring_images = False
         self.active_laser = None
 
+
         # Setup hardware according to the config.
         self._setup_motion_stage()
         self._setup_camera()
@@ -96,7 +97,7 @@ class Exaspim(Spim):
         self.log.info("Configuring NIDAQ")
         self.ni.configure(live=live)
         self.log.info("Generating waveforms.")
-        voltages_t = generate_waveforms(self.cfg, plot=True, channels=self.active_lasers)
+        voltages_t = generate_waveforms(self.cfg, plot=True, channels=self.active_lasers, live =live)
         self.log.info("Writing waveforms to hardware.")
         self.ni.assign_waveforms(voltages_t)
 
@@ -129,6 +130,7 @@ class Exaspim(Spim):
         #   Throw an error otherwise.
         # TODO: lockout access to state changes if we are unable to change them
         #   i.e: we are acquiring images and cannot change the hardware settings.
+
         if self.acquiring_images:
             raise RuntimeError("Cannot change system configuration while "
                                "acquiring images.")
@@ -139,7 +141,6 @@ class Exaspim(Spim):
             active_laser = self.active_laser
             self.stop_livestream()
             self.start_livestream(active_laser)  # reapplies waveform settings.
-            self.cam.start(live=self.livestream_enabled.is_set())
 
     def run_from_config(self):
         self.collect_volumetric_image(self.cfg.volume_x_um,
@@ -214,11 +215,11 @@ class Exaspim(Spim):
         try:
             for y in range(ytiles):
                 self.sample_pose.move_absolute(
-                    y=round(self.stage_y_pos_um*UM_TO_STEPS), wait=True)
+                    y=round(self.stage_y_pos_um*STEPS_PER_UM), wait=True)
                 self.stage_x_pos_um = 0
                 for x in range(xtiles):
                     self.sample_pose.move_absolute(
-                        x=round(self.stage_x_pos_um*UM_TO_STEPS), wait=True)
+                        x=round(self.stage_x_pos_um*STEPS_PER_UM), wait=True)
                     self.log.info(f"tile: ({x}, {y}); stage_position: "
                                   f"({self.stage_x_pos_um:.3f}[um], "
                                   f"{self.stage_y_pos_um:.3f}[um])")
@@ -306,7 +307,7 @@ class Exaspim(Spim):
         capture_successful = False
         # Put the backlash into a known state.
         stage_z_pos = 0
-        z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
+        z_backup_pos = -STEPS_PER_UM*self.cfg.stage_backlash_reset_dist_um
         self.log.debug("Applying extra move to take out backlash.")
         self.sample_pose.move_absolute(z=round(z_backup_pos))
         self.sample_pose.move_absolute(z=round(stage_z_pos))
@@ -415,7 +416,7 @@ class Exaspim(Spim):
                 del self.img_buffers[ch]
             # Leave the sample in the starting position.
             # Apply lead-in move to take out z backlash.
-            z_backup_pos = -UM_TO_STEPS*self.cfg.stage_backlash_reset_dist_um
+            z_backup_pos = -STEPS_PER_UM*self.cfg.stage_backlash_reset_dist_um
             self.log.debug("Applying extra move to take out backlash.")
             self.sample_pose.move_absolute(z=round(z_backup_pos))
             self.sample_pose.move_absolute(z=0)
@@ -472,7 +473,6 @@ class Exaspim(Spim):
         # Return a dummy image if none are available.
         while self.livestream_enabled.is_set():
             yield self.get_latest_image()
-        print("exiting livestream worker.")
 
     def stop_livestream(self):
         # Bail early if it's already stopped.
@@ -485,6 +485,13 @@ class Exaspim(Spim):
         sleep(1)  # This is a hack.
         self.ni.close()
         self.active_laser = None
+
+    def set_scan_start(self, coords):
+
+        """Set start position of scan. Stage will move to coords via sample pose
+        at begining of scan"""
+        # FIXME: we should pass a starting position into collect_volumetric_image.
+        self.start_pos = coords
 
     def get_latest_image(self, channel: int = None):
         """Return the most recent acquisition image for display elsewhere.
@@ -499,7 +506,7 @@ class Exaspim(Spim):
         if not img_buffer or self.prev_frame_chunk_index is None:
             if self.livestream_enabled.is_set():
                 return self.downsampler.compute(self.cam.grab_frame())
-            else:
+            elif self.simulated:
                 # Display "white noise" if no image is available.
                 return self.downsampler.compute(np.random.randint(0,255, size=(self.cfg.sensor_row_count,
                                       self.cfg.sensor_column_count), dtype=self.cfg.image_dtype))

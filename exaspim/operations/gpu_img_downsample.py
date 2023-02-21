@@ -39,4 +39,5 @@ class DownSample:
                                  None, x_g.data, y_g.data)
             image = y_g.get()
             pyramid.append(image)
+
         return pyramid

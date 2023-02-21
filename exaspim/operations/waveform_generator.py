@@ -23,7 +23,7 @@ def plot_waveforms_to_pdf(t, voltages_t):
     fig.savefig("plot.pdf")
 
 
-def generate_waveforms(cfg, plot: bool = False, channels: list[int] = None):
+def generate_waveforms(cfg, plot: bool = False, channels: list[int] = None, live = False):
     voltages_t = {}
     total_samples = 0
 
@@ -75,9 +75,10 @@ def generate_waveforms(cfg, plot: bool = False, channels: list[int] = None):
 
         # Generate stage TTL signal
         if ch == channels_list[-1]:
+            volts = 5.0 if not live else 0.0
             voltages_t[ch][cfg.n2c['stage'],
                            camera_exposure_samples + etl_buffer_samples + dwell_time_samples:
-                           camera_exposure_samples + etl_buffer_samples + dwell_time_samples + pulse_samples] = 5.0
+                           camera_exposure_samples + etl_buffer_samples + dwell_time_samples + pulse_samples] = volts
 
     # Merge voltage arrays
     voltages_out = np.array([]).reshape((len(cfg.n2c), 0))
