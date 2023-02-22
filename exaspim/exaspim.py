@@ -2,7 +2,7 @@
 
 import numpy as np
 import logging
-import traceback
+from tqdm import tqdm
 from pathlib import Path
 from psutil import virtual_memory, Process
 from os import getpid
@@ -213,7 +213,7 @@ class Exaspim(Spim):
         # Create stacks of tiles along the z axis per channel.
         # Transfer stacks as they arrive to their final destination.
         try:
-            for y in range(ytiles):
+            for y in tqdm(range(ytiles), desc="XY Tiling Progress", bar_format='{elapsed}<{remaining}'):
                 self.sample_pose.move_absolute(
                     y=round(self.stage_y_pos_um*STEPS_PER_UM), wait=True)
                 self.stage_x_pos_um = 0
@@ -345,7 +345,7 @@ class Exaspim(Spim):
         self.cam.start(len(channels)*frame_count, live=False)  # TODO: rewrite to block until ready.
         try:
             # Images arrive serialized in repeating channel order.
-            for stack_index in range(frame_count):
+            for stack_index in tqdm(range(frame_count), desc="ZStack progress", bar_format='{elapsed}<{remaining}'):
                 chunk_index = stack_index % chunk_size
                 # Start a batch of pulses to generate more frames and movements.
                 if chunk_index == 0:

@@ -3,11 +3,11 @@
 
 from exaspim.exaspim import Exaspim
 from coloredlogs import ColoredFormatter
+from tqdm import tqdm
 import ctypes
 import logging
 import argparse
 import os
-import sys
 import traceback
 
 # Remove any handlers already attached to the root logger.
@@ -22,6 +22,16 @@ class SpimLogFilter(logging.Filter):
         """Returns true for a record that matches a log we want to keep."""
         return record.name.split('.')[0].lower() in \
             self.__class__.VALID_LOGGER_BASES
+
+
+# https://stackoverflow.com/questions/14897756/python-progress-bar-through-logging-module
+class TqdmHandler(logging.StreamHandler):
+    def __init__(self):
+        logging.StreamHandler.__init__(self)
+
+    def emit(self, record):
+        msg = self.format(record)
+        tqdm.write(msg)
 
 
 def main():
@@ -61,7 +71,8 @@ def main():
         if args.color_console_output \
         else logging.Formatter(fmt=fmt, datefmt=datefmt)
     if args.console_output:
-        log_handler = logging.StreamHandler(sys.stdout)
+        #log_handler = logging.StreamHandler(sys.stdout)
+        log_handler = TqdmHandler()
         log_handler.addFilter(SpimLogFilter())
         log_handler.setLevel(args.log_level)
         log_handler.setFormatter(log_formatter)

@@ -21,6 +21,7 @@ requires-python = ">=3.6"
 dependencies = [
     "PyImarisWriter >= 0.7.0",
     "thorlabs-apt >= 0.2",
+    "tqdm >= 4.64.1",
     "tigerasi @ git+ssh://git@github.com/AllenNeuralDynamics/TigerASI.git@main#egg=TigerASI",
     "spim_core @ git+ssh://git@github.com/AllenNeuralDynamics/spim-core.git@main#egg=spim_core",
     "gputools>=0.2.13",
