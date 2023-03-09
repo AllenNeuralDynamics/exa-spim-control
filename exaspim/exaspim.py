@@ -20,7 +20,7 @@ from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
 from math import ceil, floor
 from tigerasi.tiger_controller import TigerController, STEPS_PER_UM
 from tigerasi.sim_tiger_controller import TigerController as SimTiger
-from spim_core.spim_base import Spim
+from spim_core.spim_base import Spim, lock_external_user_input
 from spim_core.devices.tiger_components import SamplePose
 
 # Constants
@@ -155,6 +155,7 @@ class Exaspim(Spim):
                                       self.img_storage_dir,
                                       self.deriv_storage_dir)
 
+    @lock_external_user_input
     def collect_volumetric_image(self, volume_x_um: float, volume_y_um: float,
                                  volume_z_um: float,
                                  channels: list[int],
@@ -483,6 +484,14 @@ class Exaspim(Spim):
         sleep(1)  # This is a hack.
         self.ni.close()
         self.active_laser = None
+
+    def lock_external_user_input(self):
+        """Lockout any user inputs such that they have no effect."""
+        self.sample_pose.lock_external_user_input()
+
+    def unlock_external_user_input(self):
+        """Unlock any external user inputs."""
+        self.sample_pose.unlock_external_user_input()
 
     def set_scan_start(self, coords):
 
