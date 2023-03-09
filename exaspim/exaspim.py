@@ -19,7 +19,7 @@ from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
 from math import ceil, floor
 from tigerasi.tiger_controller import TigerController, STEPS_PER_UM
-from tigerasi.sim_tiger_controller import TigerController as SimTiger
+from tigerasi.sim_tiger_controller import SimTigerController as SimTiger
 from spim_core.spim_base import Spim, lock_external_user_input
 from spim_core.devices.tiger_components import SamplePose
 
