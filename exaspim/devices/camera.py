@@ -30,7 +30,7 @@ class Camera:
         self.grabber.remote.set("OffsetX", round(width_x/2 - self.cfg.sensor_column_count / 2.0))  # center roi on sensor
         self.grabber.remote.set("OffsetY", 0)  # set to 0 by default
         self.grabber.remote.set("Height", self.cfg.sensor_row_count) # set roi height
-        self.grabber.RemotePort.set("PixelFormat", "Mono14") # use 14-bit A/D
+        self.grabber.remote.set("PixelFormat", "Mono14") # use 14-bit A/D
         # Frame rate setting does not need to be set in external trigger mode.
         # set exposure time us, i.e. slit width
         self.grabber.remote.set("ExposureTime", round(self.cfg.camera_dwell_time * 1.0e6, 1))
