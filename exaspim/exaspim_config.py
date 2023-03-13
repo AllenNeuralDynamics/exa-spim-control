@@ -30,13 +30,20 @@ class ExaspimConfig(SpimConfig):
         """Returns required time to play a waveform period for a given channel."""
         return self.camera_exposure_time \
                + self.get_etl_buffer_time(wavelength) \
-               + self.frame_rest_time
+               + self.frame_rest_time \
+               + self.camera_dwell_time
 
     def get_camera_delay_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['camera']['delay_time_s']
 
     def get_etl_amplitude(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['amplitude']
+
+    def get_galvo_a_setpoint(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['galvo_a']['setpoint']
+
+    def get_galvo_b_setpoint(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['galvo_b']['setpoint']
 
     def get_etl_offset(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['offset']

@@ -22,15 +22,18 @@ class Camera:
         self.grabber.realloc_buffers(self.cfg.egrabber_frame_buffer)  # allocate RAM buffer N frames
         # Note: Msb unpacking is slightly faster according to camera vendor.
         self.grabber.stream.set("UnpackingMode", "Msb")  # msb packing of 12-bit data
-        self.grabber.remote.set("OffsetX", 0)
-        self.grabber.remote.set("Width", int(self.cfg.sensor_column_count))
-        self.grabber.remote.set("Height", self.cfg.sensor_row_count)
-        # TODO: bit rate
-        # grabber.RemotePort.set("PixelFormat", "Mono14");
+        self.grabber.remote.set("OffsetX", 0) # set to 0 by default
+        self.grabber.remote.set("Width", int(self.cfg.sensor_column_count)) # set roi width
+        # TODO: OffsetX gets rounded to a multiple of 16.
+        #   Log (warning level) if the desired OffsetX differs from the actual.
+        width_x = self.grabber.remote.get("SensorWidth")
+        self.grabber.remote.set("OffsetX", round(width_x/2 - self.cfg.sensor_column_count / 2.0))  # center roi on sensor
+        self.grabber.remote.set("OffsetY", 0)  # set to 0 by default
+        self.grabber.remote.set("Height", self.cfg.sensor_row_count) # set roi height
+        self.grabber.RemotePort.set("PixelFormat", "Mono14") # use 14-bit A/D
         # Frame rate setting does not need to be set in external trigger mode.
         # set exposure time us, i.e. slit width
-        # TODO: round exposure time to one decimal place.
-        self.grabber.remote.set("ExposureTime", self.cfg.camera_dwell_time * 1.0e6)
+        self.grabber.remote.set("ExposureTime", round(self.cfg.camera_dwell_time * 1.0e6, 1))
         # Note: Setting TriggerMode if it's already correct will throw an error
         if self.grabber.remote.get("TriggerMode") != "On":  # set camera to external trigger mode
             self.grabber.remote.set("TriggerMode", "On")
