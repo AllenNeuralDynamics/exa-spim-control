@@ -44,7 +44,6 @@ def generate_waveforms(cfg, plot: bool = False, channels: list[int] = None, live
         # Create channel-specific samples arrays for various relevant timings
         camera_delay_samples = int(cfg.daq_sample_rate * cfg.get_camera_delay_time(ch))
         etl_buffer_samples = int(cfg.daq_sample_rate * cfg.get_etl_buffer_time(ch))
-        laser_buffer_samples = int(cfg.daq_sample_rate * cfg.get_laser_buffer_time(ch))
         channel_samples = camera_exposure_samples + etl_buffer_samples + rest_samples + dwell_time_samples
 
         total_samples += channel_samples
@@ -77,8 +76,8 @@ def generate_waveforms(cfg, plot: bool = False, channels: list[int] = None, live
 
         # Generate laser TTL signal
         voltages_t[ch][n2c_index[str(ch)],  # FIXME: remove n2c or move it into the config.
-        int(etl_buffer_samples / 2.0) - laser_buffer_samples + camera_delay_samples:int(
-            etl_buffer_samples / 2.0) + camera_exposure_samples + dwell_time_samples + camera_delay_samples] = 5.0
+        int(etl_buffer_samples / 2.0) + camera_delay_samples:int(
+            etl_buffer_samples / 2.0) + camera_exposure_samples + dwell_time_samples + camera_delay_samples] = 4.0
 
         # Generate stage TTL signal
         if ch == channels_list[-1]:

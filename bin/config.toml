@@ -159,7 +159,7 @@ port='COMxx'
 
 # <SOMETHING>_kwds will be splatted with **kwds to init the corresponding object.
 [daq_driver_kwds]
-dev_name = 'Dev1' # NI Card address as it appears to the PC.
+dev_name = 'Dev2' # NI Card address as it appears to the PC.
 samples_per_sec = 1e4
 [daq_driver_kwds.ao_channels]
 etl = 0

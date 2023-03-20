@@ -57,9 +57,6 @@ class ExaspimConfig(SpimConfig):
     def get_etl_buffer_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['buffer_time_s']
 
-    def get_laser_buffer_time(self, wavelength: int):
-        return self.channel_specs[str(wavelength)]['buffer_time_s']
-
     # Waveform Specs
     @property
     def ttl_pulse_time(self):

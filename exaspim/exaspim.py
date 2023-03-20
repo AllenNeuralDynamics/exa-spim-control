@@ -222,7 +222,7 @@ class Exaspim(Spim):
                     self.log.info(f"tile: ({x}, {y}); stage_position: "
                                   f"({self.stage_x_pos_um:.3f}[um], "
                                   f"{self.stage_y_pos_um:.3f}[um])")
-                    stack_prefix = f"{tile_prefix}_{x:04}_{y:04}"
+                    stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
                     output_filenames = \
                         self._collect_zstacks(channels, ztiles, z_step_size_um,
                                               chunk_size, local_storage_dir,
@@ -314,7 +314,7 @@ class Exaspim(Spim):
                                                        z_step_size_um/1.0e3)
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
-            stack_file_names[ch] = f"{stack_prefix}_{ch}.ims"
+            stack_file_names[ch] = f"{stack_prefix}_ch_{ch}.ims"
             mem_shape = (chunk_size,
                          self.cfg.sensor_row_count,
                          self.cfg.sensor_column_count)
