@@ -8,7 +8,6 @@ from psutil import virtual_memory, Process
 from os import getpid
 from time import perf_counter, sleep
 from mock import NonCallableMock as Mock
-from datetime import datetime
 from exaspim.exaspim_config import ExaspimConfig
 from exaspim.devices.camera import Camera
 from exaspim.devices.ni import NI
@@ -143,73 +142,7 @@ class Exaspim(Spim):
             self.stop_livestream()
             self.start_livestream(active_lasers)  # reapplies waveform settings.
 
-    def run_from_config(self):
-        self.collect_volumetric_image(self.cfg.volume_x_um,
-                                      self.cfg.volume_y_um,
-                                      self.cfg.volume_z_um,
-                                      self.cfg.channels,
-                                      self.cfg.tile_overlap_x_percent,
-                                      self.cfg.tile_overlap_y_percent,
-                                      self.cfg.z_step_size_um,
-                                      self.cfg.tile_prefix,
-                                      self.cfg.compressor_chunk_size,
-                                      self.cache_storage_dir,
-                                      # TODO: make these last two config based.
-                                      self.img_storage_dir,
-                                      self.deriv_storage_dir)
-
-    @lock_external_user_input
-    def collect_volumetric_image(self, volume_x_um: float, volume_y_um: float,
-                                 volume_z_um: float,
-                                 channels: list[int],
-                                 tile_overlap_x_percent: float,
-                                 tile_overlap_y_percent: float,
-                                 z_step_size_um: float,
-                                 tile_prefix: str,
-                                 compressor_chunk_size: int = None,
-                                 local_storage_dir: Path = Path("."),
-                                 img_storage_dir: Path = None,
-                                 deriv_storage_dir: Path = None):
-        # TODO: pass in start position as a parameter.
-        """Collect a volumetric image with specified size/overlap specs."""
-        # Memory checks.
-        chunk_size = self.cfg.compressor_chunk_size \
-            if compressor_chunk_size is None else compressor_chunk_size
-        try:  # Ensure we have enough memory for the allocated chunk size.
-            self._check_system_memory_resources(len(channels), chunk_size)
-        except MemoryError as e:
-            self.log.error(e)
-            raise
-        x_grid_step_um, y_grid_step_um = self.get_xy_grid_step(tile_overlap_x_percent,
-                                                               tile_overlap_y_percent)
-        xtiles, ytiles, ztiles = self.get_tile_counts(tile_overlap_x_percent,
-                                                      tile_overlap_y_percent,
-                                                      z_step_size_um,
-                                                      volume_x_um, volume_y_um,
-                                                      volume_z_um)
-        self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
-                       f"{y_grid_step_um:.3f}[um] in y.")
-        self.log.debug(f"Imaging operation will produce: "
-                       f"{xtiles} xtiles, {ytiles} ytiles, and {ztiles} ztiles"
-                       f"per channel.")
-        # Update internal state.
-        self.total_tiles = xtiles * ytiles * ztiles * len(channels)
-        self.log.debug(f"Total tiles: {self.total_tiles}.")
-        self.frame_index = 0  # Reset image index.
-        self.acquiring_images = True
-
-        # Log relevant info about this imaging run.
-        self.schema_log.info('acquisition parameters')
-        self.schema_log.info(f'session_start_time, {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
-        self.schema_log.info(f'local_storage_directory, {local_storage_dir}')
-        self.schema_log.info(f'external_storage_directory, {img_storage_dir}')
-        self.schema_log.info(f'specimen_id,{self.cfg.imaging_specs["subject_id"]}')
-        self.schema_log.info(f'subject_id,{self.cfg.imaging_specs["subject_id"]}')
-        self.schema_log.info(f'instrument_id, exaspim-01')
-        self.schema_log.info(f'chamber_immersion_medium, {self.cfg.immersion_medium}')
-        self.schema_log.info(f'chamber_immersion_refractive_index, '
-                             f'{self.cfg.immersion_medium_refractive_index}')
-
+    def log_system_metadata(self):
         # log tiger settings
         self.schema_log.info('tiger motorized axes parameters')
         build_config = self.tigerbox.get_build_config()
@@ -268,6 +201,74 @@ class Exaspim(Spim):
                         if not self.cam.grabber.system.get(query.command(feature)):
                             self.schema_log.info(f'system, {feature}, {self.cam.grabber.system.get(feature)}')
 
+    def run_from_config(self):
+        self.collect_volumetric_image(self.cfg.volume_x_um,
+                                      self.cfg.volume_y_um,
+                                      self.cfg.volume_z_um,
+                                      self.cfg.channels,
+                                      self.cfg.tile_overlap_x_percent,
+                                      self.cfg.tile_overlap_y_percent,
+                                      self.cfg.z_step_size_um,
+                                      self.cfg.tile_prefix,
+                                      self.cfg.compressor_chunk_size,
+                                      self.cache_storage_dir,
+                                      # TODO: make these last two config based.
+                                      self.img_storage_dir,
+                                      self.deriv_storage_dir)
+
+    @lock_external_user_input
+    def collect_volumetric_image(self, volume_x_um: float, volume_y_um: float,
+                                 volume_z_um: float,
+                                 channels: list[int],
+                                 tile_overlap_x_percent: float,
+                                 tile_overlap_y_percent: float,
+                                 z_step_size_um: float,
+                                 tile_prefix: str,
+                                 compressor_chunk_size: int = None,
+                                 local_storage_dir: Path = Path("."),
+                                 img_storage_dir: Path = None,
+                                 deriv_storage_dir: Path = None):
+        # TODO: pass in start position as a parameter.
+        """Collect a volumetric image with specified size/overlap specs."""
+        # Memory checks.
+        chunk_size = self.cfg.compressor_chunk_size \
+            if compressor_chunk_size is None else compressor_chunk_size
+        try:  # Ensure we have enough memory for the allocated chunk size.
+            self._check_system_memory_resources(len(channels), chunk_size)
+        except MemoryError as e:
+            self.log.error(e)
+            raise
+        x_grid_step_um, y_grid_step_um = self.get_xy_grid_step(tile_overlap_x_percent,
+                                                               tile_overlap_y_percent)
+        xtiles, ytiles, ztiles = self.get_tile_counts(tile_overlap_x_percent,
+                                                      tile_overlap_y_percent,
+                                                      z_step_size_um,
+                                                      volume_x_um, volume_y_um,
+                                                      volume_z_um)
+        self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
+                       f"{y_grid_step_um:.3f}[um] in y.")
+        self.log.debug(f"Imaging operation will produce: "
+                       f"{xtiles} xtiles, {ytiles} ytiles, and {ztiles} ztiles"
+                       f"per channel.")
+        # Log relevant info about this imaging run.
+        acquisition_params = \
+            {
+                'local_storage_directory': local_storage_dir,
+                'external_storage_directory': img_storage_dir,
+                'specimen_id': self.cfg.imaging_specs['subject_id'],
+                'subject_id': self.cfg.imaging_specs['subject_id'],
+                'instrument_id': 'exaspim-01',
+                'chamber_immersion_medium': self.cfg.immersion_medium,
+                'chamber_immersion_refractive_index': self.cfg.immersion_medium_refractive_index,
+            }
+        self.schema_log("acquisition parameters", extra=acquisition_params)
+        self.schema_log("Session start.")
+        self.log_system_metadata()
+        # Update internal state.
+        self.total_tiles = xtiles * ytiles * ztiles * len(channels)
+        self.log.debug(f"Total tiles: {self.total_tiles}.")
+        self.frame_index = 0  # Reset image index.
+        self.acquiring_images = True
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
@@ -301,40 +302,54 @@ class Exaspim(Spim):
                     stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
 
                     # Logging for JSON schema
-                    self.schema_log.info(f'tile_number, {tile_number}')
                     etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
-                    self.schema_log.info(f'etl_temperature, {etl_temperature} degrees celsius')
                     self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
                     camera_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.schema_log.info(f'camera_board_temperature, {camera_temperature} degrees celsius')
                     self.cam.grabber.remote.set("DeviceTemperatureSelector", "Sensor")
                     sensor_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.schema_log.info(f'sensor_temperature, {sensor_temperature} degrees celsius')
                     self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
-
+                    tile_schema_params = \
+                        {
+                            'tile_number': tile_number,
+                            'etl_temperature': etl_temperature,
+                            'etl_temperature_units': 'C',
+                            'camera_board_temperature': camera_temperature,
+                            'camera_board_temperature_units': 'C',
+                            'sensor_temperature': sensor_temperature,
+                            'sensor_temperature_units': 'C'
+                        }
+                    self.schema_log.info('Tile Data', extra=tile_schema_params)
+                    # Log file params per laser channel.
                     for laser in self.active_lasers:
+                        file_schema_data = \
+                            {
+                                'file_name': f'{stack_prefix}_ch_{laser}.ims',
+                                'channel_name': f'{laser}',
+                                'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
+                                'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
+                                'z_voxel_size': z_step_size_um,
+                                'voxel_size_units': 'micrometers',
+                                'tile_x_position': self.stage_x_pos_um * 0.001,
+                                'tile_y_position': self.stage_y_pos_um * 0.001,
+                                'tile_z_position': self.stage_z_pos_um * 0.001,
+                                'tile_position_units': 'millimeters',
+                                'lightsheet_angle': 0,
+                                'lightsheet_angle_units': 'degrees',
+                                'laser_wavelength': laser,
+                                'laser_wavelength_units': "nanometers",
+                                'laser_power': 2000,
+                                'laser_power_units': 'milliwatts',
+                                'filter_wheel_index': 0
+                            }
                         laser = str(laser)
-                        self.schema_log.info(f'file_name, {stack_prefix}_ch_{laser}.ims')
-                        self.schema_log.info(f'channel_name, {laser}')
-                        self.schema_log.info(
-                            f'x_voxel_size, {self.cfg.tile_size_x_um / self.cfg.sensor_column_count} micrometers')
-                        self.schema_log.info(
-                            f'y_voxel_size, {self.cfg.tile_size_y_um / self.cfg.sensor_row_count} micrometers')
-                        self.schema_log.info(f'z_voxel_size, {z_step_size_um} micrometers')
-                        self.schema_log.info(f'tile_x_position, {self.stage_x_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'tile_y_position, {self.stage_y_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'tile_z_position, {self.stage_z_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'lightsheet_angle, 0 degrees')
-                        self.schema_log.info(f'laser_wavelength, {laser} nanometers')
-                        self.schema_log.info(f'laser_power, 2000 milliwatts')
-                        self.schema_log.info(f'filter_wheel_index, 0')
-                        # Every variable in calculate waveforms
                         for key in self.cfg.channel_specs[laser]['etl']:
-                            self.schema_log.info(f'daq_etl {key}: {self.cfg.channel_specs[laser]["etl"][key]}')
+                            file_schema_data[f'daq_etl {key}'] = f'{self.cfg.channel_specs[laser]["etl"][key]}'
                         for key in self.cfg.channel_specs[laser]['galvo_a']:
-                            self.schema_log.info(f'daq_galvo_a {key}, {self.cfg.channel_specs[laser]["galvo_a"][key]}')
+                            file_schema_data[f'daq_galvo_a {key}'] = f'{self.cfg.channel_specs[laser]["galvo_a"][key]}'
                         for key in self.cfg.channel_specs[laser]['galvo_b']:
-                            self.schema_log.info(f'daq_galvo_b {key}, {self.cfg.channel_specs[laser]["galvo_b"][key]}')
+                            file_schema_data[f'daq_galvo_b {key}'] = f'{self.cfg.channel_specs[laser]["galvo_b"][key]}'
+                        self.schema_log.info(f'Laser Chanel {laser} File Data',
+                                             extra=file_schema_data)
 
                     output_filenames = \
                         self._collect_zstacks(channels, ztiles, z_step_size_um,
@@ -382,7 +397,7 @@ class Exaspim(Spim):
         #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
         #    with TiffWriter(path, bigtiff=True) as tif:
         #        tif.write(mip_data)
-        self.schema_log.info(f'session_end_time, {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
+        self.schema_log.info('Session end.')
 
     def _collect_zstacks(self, channels: list[int], frame_count: int,
                          z_step_size_um: float, chunk_size: int,
