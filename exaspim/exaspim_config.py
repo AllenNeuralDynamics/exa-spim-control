@@ -13,6 +13,7 @@ class ExaspimConfig(SpimConfig):
         super().__init__(toml_filepath, TomlTemplate)
 
         # Make references to mutable objects.
+        self.experiment_specs = self.cfg['experiment_specs']
         self.waveform_specs = self.cfg['waveform_specs']
         self.compressor_specs = self.cfg['compressor_specs']
         self.file_transfer_specs = self.cfg['file_transfer_specs']
@@ -76,6 +77,32 @@ class ExaspimConfig(SpimConfig):
         """The rest time in between frames for the ETL to snap back to its
         starting position."""
         self.waveform_specs['frame_rest_time_s'] = seconds
+
+    # Experiment Specs
+
+    @property
+    def experimenters_name(self):
+        return self.experiment_specs['experimenters_name']
+
+    @experimenters_name.setter
+    def experimenters_name(self, name: str):
+        self.experiment_specs['experimenters_name'] = name
+
+    @property
+    def immersion_medium(self):
+        return self.experiment_specs['immersion_medium']
+
+    @immersion_medium.setter
+    def immersion_medium(self, medium: str):
+        self.experiment_specs['immersion_medium'] = medium
+
+    @property
+    def immersion_medium_refractive_index(self):
+        return self.experiment_specs['immersion_medium_refractive_index']
+
+    @immersion_medium_refractive_index.setter
+    def immersion_medium_refractive_index(self, ri: float):
+        self.experiment_specs['immersion_medium_refractive_index'] = ri
 
     # Stage Specs
     @property

@@ -8,6 +8,7 @@ from psutil import virtual_memory, Process
 from os import getpid
 from time import perf_counter, sleep
 from mock import NonCallableMock as Mock
+from datetime import datetime
 from exaspim.exaspim_config import ExaspimConfig
 from exaspim.devices.camera import Camera
 from exaspim.devices.ni import NI
@@ -22,6 +23,7 @@ from tigerasi.tiger_controller import TigerController, STEPS_PER_UM
 from tigerasi.sim_tiger_controller import SimTigerController as SimTiger
 from spim_core.spim_base import Spim, lock_external_user_input
 from spim_core.devices.tiger_components import SamplePose
+from egrabber import query
 
 # Constants
 IMARIS_TIMEOUT_S = 0.1
@@ -55,11 +57,12 @@ class Exaspim(Spim):
         self.downsampler = DownSample()
         self.prev_frame_chunk_index = None  # chunk index of most recent frame.
         self.stage_x_pos_um = None  # Current x position in [um]
-        self.stage_y_pos_um = None  # Curren y position in [um]
-        self.start_pos = None       # Start position of scan
+        self.stage_y_pos_um = None  # Current y position in [um]
+        self.stage_z_pos_um = None  # Current z position in [um]
+        self.start_pos = None  # Start position of scan
         self.livestream_enabled = Event()
         self.acquiring_images = False
-        self.active_laser = None
+        self.active_lasers = None
         # Setup hardware according to the config.
         self._setup_motion_stage()
         self._setup_camera()
@@ -71,13 +74,13 @@ class Exaspim(Spim):
 
     def __simulated_grab_frame(self):
         elapsed_time = perf_counter() - self.last_frame_time
-        if elapsed_time < 1./6.4:
-            remaining_time = 1./6.4 - elapsed_time
+        if elapsed_time < 1. / 6.4:
+            remaining_time = 1. / 6.4 - elapsed_time
             sleep(remaining_time)
         self.last_frame_time = perf_counter()
         # Image shape is a buffer organized by y and then by x.
         return np.zeros((self.cfg.sensor_row_count,
-                        self.cfg.sensor_column_count),
+                         self.cfg.sensor_column_count),
                         dtype=self.cfg.image_dtype)
 
     def _setup_camera(self):
@@ -95,7 +98,7 @@ class Exaspim(Spim):
         self.log.info("Configuring NIDAQ")
         self.ni.configure(live=live)
         self.log.info("Generating waveforms.")
-        voltages_t = generate_waveforms(self.cfg, plot=True, channels=self.active_lasers, live =live)
+        voltages_t = generate_waveforms(self.cfg, plot=True, channels=self.active_lasers, live=live)
         self.log.info("Writing waveforms to hardware.")
         self.ni.assign_waveforms(voltages_t)
 
@@ -109,7 +112,7 @@ class Exaspim(Spim):
         :raises MemoryError:
         """
         # Calculate double buffer size for all channels.
-        bytes_per_gig = (1024**3)
+        bytes_per_gig = (1024 ** 3)
         used_mem_gigabytes = \
             ((self.cfg.bytes_per_image * mem_chunk * 2) / bytes_per_gig) \
             * channel_count
@@ -136,9 +139,9 @@ class Exaspim(Spim):
             self.cam.stop()
         self.cam.configure()  # configures from config.
         if self.livestream_enabled:
-            active_laser = self.active_laser
+            active_lasers = self.active_lasers
             self.stop_livestream()
-            self.start_livestream(active_laser)  # reapplies waveform settings.
+            self.start_livestream(active_lasers)  # reapplies waveform settings.
 
     def run_from_config(self):
         self.collect_volumetric_image(self.cfg.volume_x_um,
@@ -150,7 +153,7 @@ class Exaspim(Spim):
                                       self.cfg.z_step_size_um,
                                       self.cfg.tile_prefix,
                                       self.cfg.compressor_chunk_size,
-                                      self.cfg.local_storage_dir,
+                                      self.cache_storage_dir,
                                       # TODO: make these last two config based.
                                       self.img_storage_dir,
                                       self.deriv_storage_dir)
@@ -167,7 +170,7 @@ class Exaspim(Spim):
                                  local_storage_dir: Path = Path("."),
                                  img_storage_dir: Path = None,
                                  deriv_storage_dir: Path = None):
-                                 # TODO: pass in start position as a parameter.
+        # TODO: pass in start position as a parameter.
         """Collect a volumetric image with specified size/overlap specs."""
         # Memory checks.
         chunk_size = self.cfg.compressor_chunk_size \
@@ -194,6 +197,77 @@ class Exaspim(Spim):
         self.log.debug(f"Total tiles: {self.total_tiles}.")
         self.frame_index = 0  # Reset image index.
         self.acquiring_images = True
+
+        # Log relevant info about this imaging run.
+        self.schema_log.info('acquisition parameters')
+        self.schema_log.info(f'session_start_time, {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
+        self.schema_log.info(f'local_storage_directory, {local_storage_dir}')
+        self.schema_log.info(f'external_storage_directory, {img_storage_dir}')
+        self.schema_log.info(f'specimen_id,{self.cfg.imaging_specs["subject_id"]}')
+        self.schema_log.info(f'subject_id,{self.cfg.imaging_specs["subject_id"]}')
+        self.schema_log.info(f'instrument_id, exaspim-01')
+        self.schema_log.info(f'chamber_immersion_medium, {self.cfg.immersion_medium}')
+        self.schema_log.info(f'chamber_immersion_refractive_index, '
+                             f'{self.cfg.immersion_medium_refractive_index}')
+
+        # log tiger settings
+        self.schema_log.info('tiger motorized axes parameters')
+        build_config = self.tigerbox.get_build_config()
+        self.log.debug(f'{build_config}')
+        ordered_axes = build_config['Motor Axes']
+        for axis in ordered_axes:
+            axis_settings = self.tigerbox.get_info(axis)
+            for setting in axis_settings:
+                self.schema_log.info(f'{axis} axis, {setting}, {axis_settings[setting]}')
+
+        # log egrabber camera settings
+        self.schema_log.info('egrabber camera parameters')
+        categories = self.cam.grabber.device.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.device.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.device.get(query.available(feature)):
+                    if self.cam.grabber.device.get(query.readable(feature)):
+                        if not self.cam.grabber.device.get(query.command(feature)):
+                            self.schema_log.info(f'device, {feature}, {self.cam.grabber.device.get(feature)}')
+
+        categories = self.cam.grabber.remote.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.remote.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.remote.get(query.available(feature)):
+                    if self.cam.grabber.remote.get(query.readable(feature)):
+                        if not self.cam.grabber.remote.get(query.command(feature)):
+                            if feature != "BalanceRatioSelector" and feature != "BalanceWhiteAuto":
+                                self.schema_log.info(f'remote, {feature}, {self.cam.grabber.remote.get(feature)}')
+
+        categories = self.cam.grabber.stream.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.stream.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.stream.get(query.available(feature)):
+                    if self.cam.grabber.stream.get(query.readable(feature)):
+                        if not self.cam.grabber.stream.get(query.command(feature)):
+                            self.schema_log.info(f'stream, {feature}, {self.cam.grabber.stream.get(feature)}')
+
+        categories = self.cam.grabber.interface.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.interface.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.interface.get(query.available(feature)):
+                    if self.cam.grabber.interface.get(query.readable(feature)):
+                        if not self.cam.grabber.interface.get(query.command(feature)):
+                            self.schema_log.info(f'interface, {feature}, {self.cam.grabber.interface.get(feature)}')
+
+        categories = self.cam.grabber.system.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.system.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.system.get(query.available(feature)):
+                    if self.cam.grabber.system.get(query.readable(feature)):
+                        if not self.cam.grabber.system.get(query.command(feature)):
+                            self.schema_log.info(f'system, {feature}, {self.cam.grabber.system.get(feature)}')
+
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
@@ -205,28 +279,68 @@ class Exaspim(Spim):
             self.start_pos = None
         # Reset the starting location.
         self.sample_pose.zero_in_place('x', 'y', 'z')
-        self.stage_x_pos_um, self.stage_y_pos_um = (0, 0)
+        self.stage_x_pos_um, self.stage_y_pos_um, self.stage_z_pos_um = (0, 0, 0) # TODO, z_pos into scan function
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
         # Create stacks of tiles along the z axis per channel.
         # Transfer stacks as they arrive to their final destination.
+        self.schema_log.info('tile parameters')
         try:
-            for y in tqdm(range(ytiles), desc="XY Tiling Progress"):
+            for x in tqdm(range(xtiles), desc="XY Tiling Progress"):
                 self.sample_pose.move_absolute(
-                    y=round(self.stage_y_pos_um*STEPS_PER_UM), wait=True)
-                self.stage_x_pos_um = 0
-                for x in range(xtiles):
+                    x=round(self.stage_x_pos_um * STEPS_PER_UM), wait=True)
+                self.stage_y_pos_um = 0
+                for y in range(ytiles):
+                    tile_number = y + x*ytiles
                     self.sample_pose.move_absolute(
-                        x=round(self.stage_x_pos_um*STEPS_PER_UM), wait=True)
+                        y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
                     self.log.info(f"tile: ({x}, {y}); stage_position: "
                                   f"({self.stage_x_pos_um:.3f}[um], "
                                   f"{self.stage_y_pos_um:.3f}[um])")
                     stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
+
+                    # Logging for JSON schema
+                    self.schema_log.info(f'tile_number, {tile_number}')
+                    etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
+                    self.schema_log.info(f'etl_temperature, {etl_temperature} degrees celsius')
+                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+                    camera_temperature = self.cam.grabber.remote.get("DeviceTemperature")
+                    self.schema_log.info(f'camera_board_temperature, {camera_temperature} degrees celsius')
+                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Sensor")
+                    sensor_temperature = self.cam.grabber.remote.get("DeviceTemperature")
+                    self.schema_log.info(f'sensor_temperature, {sensor_temperature} degrees celsius')
+                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+
+                    for laser in self.active_lasers:
+                        laser = str(laser)
+                        self.schema_log.info(f'file_name, {stack_prefix}_ch_{laser}.ims')
+                        self.schema_log.info(f'channel_name, {laser}')
+                        self.schema_log.info(
+                            f'x_voxel_size, {self.cfg.tile_size_x_um / self.cfg.sensor_column_count} micrometers')
+                        self.schema_log.info(
+                            f'y_voxel_size, {self.cfg.tile_size_y_um / self.cfg.sensor_row_count} micrometers')
+                        self.schema_log.info(f'z_voxel_size, {z_step_size_um} micrometers')
+                        self.schema_log.info(f'tile_x_position, {self.stage_x_pos_um * 0.001} millimeters')
+                        self.schema_log.info(f'tile_y_position, {self.stage_y_pos_um * 0.001} millimeters')
+                        self.schema_log.info(f'tile_z_position, {self.stage_z_pos_um * 0.001} millimeters')
+                        self.schema_log.info(f'lightsheet_angle, 0 degrees')
+                        self.schema_log.info(f'laser_wavelength, {laser} nanometers')
+                        self.schema_log.info(f'laser_power, 2000 milliwatts')
+                        self.schema_log.info(f'filter_wheel_index, 0')
+                        # Every variable in calculate waveforms
+                        for key in self.cfg.channel_specs[laser]['etl']:
+                            self.schema_log.info(f'daq_etl {key}: {self.cfg.channel_specs[laser]["etl"][key]}')
+                        for key in self.cfg.channel_specs[laser]['galvo_a']:
+                            self.schema_log.info(f'daq_galvo_a {key}, {self.cfg.channel_specs[laser]["galvo_a"][key]}')
+                        for key in self.cfg.channel_specs[laser]['galvo_b']:
+                            self.schema_log.info(f'daq_galvo_b {key}, {self.cfg.channel_specs[laser]["galvo_b"][key]}')
+
                     output_filenames = \
                         self._collect_zstacks(channels, ztiles, z_step_size_um,
                                               chunk_size, local_storage_dir,
                                               stack_prefix)
+
                     # Start transferring zstack file to its destination.
                     # Note: Image transfer should be faster than image capture,
                     #   but we still wait for prior process to finish.
@@ -242,15 +356,15 @@ class Exaspim(Spim):
                         for channel, filename in output_filenames.items():
                             self.log.info(f"Starting transfer process for {filename}.")
                             stack_transfer_workers[channel] = \
-                                FileTransfer(local_storage_dir/filename,
-                                             img_storage_dir/filename,
+                                FileTransfer(local_storage_dir / filename,
+                                             img_storage_dir / filename,
                                              self.cfg.ftp, self.cfg.ftp_flags)
                             stack_transfer_workers[channel].start()
                     else:
                         self.log.info("Skipping file transfer process. File "
                                       "is already at its destination.")
-                    self.stage_x_pos_um += x_grid_step_um
-                self.stage_y_pos_um += y_grid_step_um
+                    self.stage_y_pos_um += y_grid_step_um
+                self.stage_x_pos_um += x_grid_step_um
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
                           f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
@@ -268,6 +382,7 @@ class Exaspim(Spim):
         #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
         #    with TiffWriter(path, bigtiff=True) as tif:
         #        tif.write(mip_data)
+        self.schema_log.info(f'session_end_time, {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
 
     def _collect_zstacks(self, channels: list[int], frame_count: int,
                          z_step_size_um: float, chunk_size: int,
@@ -306,12 +421,12 @@ class Exaspim(Spim):
         capture_successful = False
         # Put the backlash into a known state.
         stage_z_pos = 0
-        z_backup_pos = -STEPS_PER_UM*self.cfg.stage_backlash_reset_dist_um
+        z_backup_pos = -STEPS_PER_UM * self.cfg.stage_backlash_reset_dist_um
         self.log.debug("Applying extra move to take out backlash.")
         self.sample_pose.move_absolute(z=round(z_backup_pos))
         self.sample_pose.move_absolute(z=round(stage_z_pos))
         self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
-                                                       z_step_size_um/1.0e3)
+                                                       z_step_size_um / 1.0e3)
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
             stack_file_names[ch] = f"{stack_prefix}_ch_{ch}.ims"
@@ -336,22 +451,22 @@ class Exaspim(Spim):
                             stack_file_names[ch], str(ch),
                             self.cfg.channel_specs[str(ch)]['hex_color'])
             self.stack_writer_workers[ch].start()
-        chunk_count = ceil(frame_count/chunk_size)
+        chunk_count = ceil(frame_count / chunk_size)
         last_frame_index = frame_count - 1
         remainder = frame_count % chunk_size
         last_chunk_size = chunk_size if not remainder else remainder
         start_time = perf_counter()
-        self.cam.start(len(channels)*frame_count, live=False)  # TODO: rewrite to block until ready.
+        self.cam.start(len(channels) * frame_count, live=False)  # TODO: rewrite to block until ready.
         try:
             # Images arrive serialized in repeating channel order.
             for stack_index in tqdm(range(frame_count), desc="ZStack progress"):
                 chunk_index = stack_index % chunk_size
                 # Start a batch of pulses to generate more frames and movements.
                 if chunk_index == 0:
-                    chunks_filled = floor(stack_index/chunk_size)
+                    chunks_filled = floor(stack_index / chunk_size)
                     remaining_chunks = chunk_count - chunks_filled
                     num_pulses = last_chunk_size if remaining_chunks == 1 else chunk_size
-                    self.log.debug(f"Grabbing chunk {chunks_filled+1}/{chunk_count}")
+                    self.log.debug(f"Grabbing chunk {chunks_filled + 1}/{chunk_count}")
                     self.log.debug(f"Current memory usage: {self.get_mem_consumption():.3f}%")
                     self.ni.set_pulse_count(num_pulses)
                     self.ni.start()
@@ -415,7 +530,7 @@ class Exaspim(Spim):
                 del self.img_buffers[ch]
             # Leave the sample in the starting position.
             # Apply lead-in move to take out z backlash.
-            z_backup_pos = -STEPS_PER_UM*self.cfg.stage_backlash_reset_dist_um
+            z_backup_pos = -STEPS_PER_UM * self.cfg.stage_backlash_reset_dist_um
             self.log.debug("Applying extra move to take out backlash.")
             self.sample_pose.move_absolute(z=round(z_backup_pos))
             self.sample_pose.move_absolute(z=0)
@@ -440,28 +555,25 @@ class Exaspim(Spim):
                             percent_y_overlap: float):
         """return three 2-tuples indicating the shapes of the mips."""
         raise NotImplementedError
-        #xy, xz, yz = (0,0), (0,0), (0,0)
+        # xy, xz, yz = (0,0), (0,0), (0,0)
 
-    def start_livestream(self, wavelength: int = None):
+    def start_livestream(self, wavelength: list[int] = None):
 
-        if wavelength not in self.cfg.possible_channels:
-            self.log.error(f"Aborting. {wavelength}[nm] laser is not a valid "
-                           "laser.")
-            return
         # Bail early if it's started.
+        print(wavelength)
         if self.livestream_enabled.is_set():
             self.log.warning("Not starting. Livestream is already running.")
             return
         self.log.debug("Starting livestream.")
         self.log.warning(f"Turning on the {wavelength}[nm] laser.")
-        self._setup_waveform_hardware([wavelength], live=True)
+        self._setup_waveform_hardware(wavelength, live=True)
         self.cam.start(live=True)
         self.ni.start()
         self.livestream_enabled.set()
-        self.active_laser = wavelength
+        self.active_lasers = wavelength
         # Launch thread for picking up camera images.
 
-    def _livestream_worker(self, channel: int = None):
+    def _livestream_worker(self, channel: list[int] = None):
         """Return the most recent acquisition image for display elsewhere.
 
         :param channel: the channel to get the latest image for, or None,
@@ -470,8 +582,10 @@ class Exaspim(Spim):
         :return: downsample pyramid of the most recent image.
         """
         # Return a dummy image if none are available.
+        channel_id = 0
         while self.livestream_enabled.is_set():
-            yield self.get_latest_image()
+            channel_id = (channel_id + 1) % len(self.active_lasers) if len(self.active_lasers) != 1 else 0
+            yield self.get_latest_image(self.active_lasers[channel_id]), self.active_lasers[channel_id]
 
     def stop_livestream(self):
         # Bail early if it's already stopped.
@@ -483,7 +597,7 @@ class Exaspim(Spim):
         self.ni.stop(wait=False)
         sleep(1)  # This is a hack.
         self.ni.close()
-        self.active_laser = None
+        self.active_lasers = None
 
     def lock_external_user_input(self):
         """Lockout any user inputs such that they have no effect."""
@@ -515,8 +629,9 @@ class Exaspim(Spim):
                 return self.downsampler.compute(self.cam.grab_frame())
             elif self.simulated:
                 # Display "white noise" if no image is available.
-                return self.downsampler.compute(np.random.randint(0,255, size=(self.cfg.sensor_row_count,
-                                      self.cfg.sensor_column_count), dtype=self.cfg.image_dtype))
+                return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
+                                                                                self.cfg.sensor_column_count),
+                                                                  dtype=self.cfg.image_dtype))
 
     def get_mem_consumption(self):
         """get memory consumption as a percent for this process and all

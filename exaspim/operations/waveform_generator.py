@@ -81,7 +81,7 @@ def generate_waveforms(cfg, plot: bool = False, channels: list[int] = None, live
 
         # Generate stage TTL signal
         if ch == channels_list[-1]:
-            volts = 5.0 if not live else 0.0
+            volts = 0.0 if not live else 0.0
             voltages_t[ch][n2c_index['stage'],
                            camera_exposure_samples + etl_buffer_samples + dwell_time_samples:
                            camera_exposure_samples + etl_buffer_samples + dwell_time_samples + pulse_samples] = volts
