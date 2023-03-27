@@ -46,7 +46,8 @@ class Exaspim(Spim):
         self.gavlo_b = None
         self.daq = None
         self.tigerbox = TigerController(**self.cfg.tiger_obj_kwds) if not \
-            self.simulated else SimTiger(**self.cfg.tiger_obj_kwds)
+            self.simulated else SimTiger(**self.cfg.tiger_obj_kwds,
+                                         build_config={'Motor Axes': ['X', 'Y', 'Z', 'M', 'N', 'W', 'V']})
         self.sample_pose = SamplePose(self.tigerbox,
                                       **self.cfg.sample_pose_kwds)
         # Extra Internal State attributes for the current image capture
@@ -90,6 +91,8 @@ class Exaspim(Spim):
             self.last_frame_time = perf_counter()
             self.cam.get_camera_acquisition_state.return_value = {'dropped_frames': 0}
             self.cam.grab_frame = self.__simulated_grab_frame
+            self.cam.get_mainboard_temperature.return_value = 23.15
+            self.cam.get_sensor_temperature.return_value = 23.15
 
     def _setup_waveform_hardware(self, wavelengths: list[int], live: bool = False):
 
@@ -153,6 +156,8 @@ class Exaspim(Spim):
             for setting in axis_settings:
                 self.schema_log.info(f'{axis} axis, {setting}, {axis_settings[setting]}')
 
+        if self.simulated:
+            return
         # log egrabber camera settings
         self.schema_log.info('egrabber camera parameters')
         categories = self.cam.grabber.device.get(query.categories())
@@ -261,8 +266,8 @@ class Exaspim(Spim):
                 'chamber_immersion_medium': self.cfg.immersion_medium,
                 'chamber_immersion_refractive_index': self.cfg.immersion_medium_refractive_index,
             }
-        self.schema_log("acquisition parameters", extra=acquisition_params)
-        self.schema_log("Session start.")
+        self.schema_log.info("acquisition parameters", extra=acquisition_params)
+        self.schema_log.info("Session start.")
         self.log_system_metadata()
         # Update internal state.
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
@@ -303,11 +308,8 @@ class Exaspim(Spim):
 
                     # Logging for JSON schema
                     etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
-                    camera_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Sensor")
-                    sensor_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+                    camera_temperature = self.cam.get_mainboard_temperature()
+                    sensor_temperature = self.cam.get_sensor_temperature()
                     tile_schema_params = \
                         {
                             'tile_number': tile_number,

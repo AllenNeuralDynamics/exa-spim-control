@@ -97,3 +97,16 @@ class Camera:
                        f"data rate: {state['data_rate']:.2f} [MB/s], "
                        f"frame rate: {state['frame_rate']:.2f} [fps].")
         return state
+
+    def get_mainboard_temperature(self):
+        """get the mainboard temperature in degrees C."""
+        self.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+        return self.grabber.remote.get("DeviceTemperature")
+
+    def get_sensor_temperature(self):
+        """get teh sensor temperature in degrees C."""
+        self.grabber.remote.set("DeviceTemperatureSelector", "Sensor")
+        sensor_temperature = self.grabber.remote.get("DeviceTemperature")
+        # TODO: do we need to set the temp selector back, or can we skip this?
+        self.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+        return sensor_temperature
