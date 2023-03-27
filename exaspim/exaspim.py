@@ -279,7 +279,7 @@ class Exaspim(Spim):
             self.start_pos = None
         # Reset the starting location.
         self.sample_pose.zero_in_place('x', 'y', 'z')
-        self.stage_x_pos_um, self.stage_y_pos_um, self.stage_z_pos_um = (0, 0, 0) # TODO, z_pos into scan function
+        self.stage_x_pos_um, self.stage_y_pos_um, self.stage_z_pos_um = ((xtiles-1)*x_grid_step_um, (ytiles-1)*y_grid_step_um, 0) # TODO, z_pos into scan function
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
@@ -290,81 +290,86 @@ class Exaspim(Spim):
             for x in tqdm(range(xtiles), desc="XY Tiling Progress"):
                 self.sample_pose.move_absolute(
                     x=round(self.stage_x_pos_um * STEPS_PER_UM), wait=True)
-                self.stage_y_pos_um = 0
+                self.stage_y_pos_um = (ytiles-1)*y_grid_step_um
                 for y in range(ytiles):
-                    tile_number = y + x*ytiles
+
                     self.sample_pose.move_absolute(
                         y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
-                    self.log.info(f"tile: ({x}, {y}); stage_position: "
-                                  f"({self.stage_x_pos_um:.3f}[um], "
-                                  f"{self.stage_y_pos_um:.3f}[um])")
-                    stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
 
-                    # Logging for JSON schema
-                    self.schema_log.info(f'tile_number, {tile_number}')
-                    etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
-                    self.schema_log.info(f'etl_temperature, {etl_temperature} degrees celsius')
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
-                    camera_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.schema_log.info(f'camera_board_temperature, {camera_temperature} degrees celsius')
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Sensor")
-                    sensor_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.schema_log.info(f'sensor_temperature, {sensor_temperature} degrees celsius')
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+                    start_tile = 2
+                    tile_number = y + x*ytiles
 
-                    for laser in self.active_lasers:
-                        laser = str(laser)
-                        self.schema_log.info(f'file_name, {stack_prefix}_ch_{laser}.ims')
-                        self.schema_log.info(f'channel_name, {laser}')
-                        self.schema_log.info(
-                            f'x_voxel_size, {self.cfg.tile_size_x_um / self.cfg.sensor_column_count} micrometers')
-                        self.schema_log.info(
-                            f'y_voxel_size, {self.cfg.tile_size_y_um / self.cfg.sensor_row_count} micrometers')
-                        self.schema_log.info(f'z_voxel_size, {z_step_size_um} micrometers')
-                        self.schema_log.info(f'tile_x_position, {self.stage_x_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'tile_y_position, {self.stage_y_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'tile_z_position, {self.stage_z_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'lightsheet_angle, 0 degrees')
-                        self.schema_log.info(f'laser_wavelength, {laser} nanometers')
-                        self.schema_log.info(f'laser_power, 2000 milliwatts')
-                        self.schema_log.info(f'filter_wheel_index, 0')
-                        # Every variable in calculate waveforms
-                        for key in self.cfg.channel_specs[laser]['etl']:
-                            self.schema_log.info(f'daq_etl {key}: {self.cfg.channel_specs[laser]["etl"][key]}')
-                        for key in self.cfg.channel_specs[laser]['galvo_a']:
-                            self.schema_log.info(f'daq_galvo_a {key}, {self.cfg.channel_specs[laser]["galvo_a"][key]}')
-                        for key in self.cfg.channel_specs[laser]['galvo_b']:
-                            self.schema_log.info(f'daq_galvo_b {key}, {self.cfg.channel_specs[laser]["galvo_b"][key]}')
+                    if tile_number >= start_tile:
+                        self.log.info(f"tile: ({x}, {y}); stage_position: "
+                                      f"({self.stage_x_pos_um:.3f}[um], "
+                                      f"{self.stage_y_pos_um:.3f}[um])")
+                        stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
 
-                    output_filenames = \
-                        self._collect_zstacks(channels, ztiles, z_step_size_um,
-                                              chunk_size, local_storage_dir,
-                                              stack_prefix)
+                        # Logging for JSON schema
+                        self.schema_log.info(f'tile_number, {tile_number}')
+                        etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
+                        self.schema_log.info(f'etl_temperature, {etl_temperature} degrees celsius')
+                        self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+                        camera_temperature = self.cam.grabber.remote.get("DeviceTemperature")
+                        self.schema_log.info(f'camera_board_temperature, {camera_temperature} degrees celsius')
+                        self.cam.grabber.remote.set("DeviceTemperatureSelector", "Sensor")
+                        sensor_temperature = self.cam.grabber.remote.get("DeviceTemperature")
+                        self.schema_log.info(f'sensor_temperature, {sensor_temperature} degrees celsius')
+                        self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
 
-                    # Start transferring zstack file to its destination.
-                    # Note: Image transfer should be faster than image capture,
-                    #   but we still wait for prior process to finish.
-                    if stack_transfer_workers:
-                        self.log.info("Waiting for zstack transfer processes "
-                                      "to complete.")
-                        for channel in list(stack_transfer_workers.keys()):
-                            worker = stack_transfer_workers.pop(channel)
-                            worker.join()
-                    # Kick off Stack transfer processes per channel.
-                    # Bail if we don't need to transfer anything.
-                    if img_storage_dir:
-                        for channel, filename in output_filenames.items():
-                            self.log.info(f"Starting transfer process for {filename}.")
-                            stack_transfer_workers[channel] = \
-                                FileTransfer(local_storage_dir / filename,
-                                             img_storage_dir / filename,
-                                             self.cfg.ftp, self.cfg.ftp_flags)
-                            stack_transfer_workers[channel].start()
-                    else:
-                        self.log.info("Skipping file transfer process. File "
-                                      "is already at its destination.")
-                    self.stage_y_pos_um += y_grid_step_um
-                self.stage_x_pos_um += x_grid_step_um
+                        for laser in self.active_lasers:
+                            laser = str(laser)
+                            self.schema_log.info(f'file_name, {stack_prefix}_ch_{laser}.ims')
+                            self.schema_log.info(f'channel_name, {laser}')
+                            self.schema_log.info(
+                                f'x_voxel_size, {self.cfg.tile_size_x_um / self.cfg.sensor_column_count} micrometers')
+                            self.schema_log.info(
+                                f'y_voxel_size, {self.cfg.tile_size_y_um / self.cfg.sensor_row_count} micrometers')
+                            self.schema_log.info(f'z_voxel_size, {z_step_size_um} micrometers')
+                            self.schema_log.info(f'tile_x_position, {self.stage_x_pos_um * 0.001} millimeters')
+                            self.schema_log.info(f'tile_y_position, {self.stage_y_pos_um * 0.001} millimeters')
+                            self.schema_log.info(f'tile_z_position, {self.stage_z_pos_um * 0.001} millimeters')
+                            self.schema_log.info(f'lightsheet_angle, 0 degrees')
+                            self.schema_log.info(f'laser_wavelength, {laser} nanometers')
+                            self.schema_log.info(f'laser_power, 2000 milliwatts')
+                            self.schema_log.info(f'filter_wheel_index, 0')
+                            # Every variable in calculate waveforms
+                            for key in self.cfg.channel_specs[laser]['etl']:
+                                self.schema_log.info(f'daq_etl {key}: {self.cfg.channel_specs[laser]["etl"][key]}')
+                            for key in self.cfg.channel_specs[laser]['galvo_a']:
+                                self.schema_log.info(f'daq_galvo_a {key}, {self.cfg.channel_specs[laser]["galvo_a"][key]}')
+                            for key in self.cfg.channel_specs[laser]['galvo_b']:
+                                self.schema_log.info(f'daq_galvo_b {key}, {self.cfg.channel_specs[laser]["galvo_b"][key]}')
+
+                        output_filenames = \
+                            self._collect_zstacks(channels, ztiles, z_step_size_um,
+                                                  chunk_size, local_storage_dir,
+                                                  stack_prefix)
+
+                        # Start transferring zstack file to its destination.
+                        # Note: Image transfer should be faster than image capture,
+                        #   but we still wait for prior process to finish.
+                        if stack_transfer_workers:
+                            self.log.info("Waiting for zstack transfer processes "
+                                          "to complete.")
+                            for channel in list(stack_transfer_workers.keys()):
+                                worker = stack_transfer_workers.pop(channel)
+                                worker.join()
+                        # Kick off Stack transfer processes per channel.
+                        # Bail if we don't need to transfer anything.
+                        if img_storage_dir:
+                            for channel, filename in output_filenames.items():
+                                self.log.info(f"Starting transfer process for {filename}.")
+                                stack_transfer_workers[channel] = \
+                                    FileTransfer(local_storage_dir / filename,
+                                                 img_storage_dir / filename,
+                                                 self.cfg.ftp, self.cfg.ftp_flags)
+                                stack_transfer_workers[channel].start()
+                        else:
+                            self.log.info("Skipping file transfer process. File "
+                                          "is already at its destination.")
+                    self.stage_y_pos_um = self.stage_y_pos_um - y_grid_step_um
+                self.stage_x_pos_um = self.stage_x_pos_um - x_grid_step_um
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
                           f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
