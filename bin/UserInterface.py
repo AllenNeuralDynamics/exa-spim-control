@@ -1,28 +1,21 @@
-import time
-import threading
 import os
-import sys
-import time
 import os.path
-import traceback
 import time
-import glob
-from exaspim.devices import Camera
-from exaspim.devices import WaveformGenerator
-from exaspim.processes import DataWriter
-from exaspim.processes import DataProcessor
-from exaspim.processes import FileTransfer
-from exaspim.processes import DataLogger
+from exaspim.devices import camera
+from exaspim.devices import ni
+from exaspim.processes import stack_writer
+from exaspim.processes import mip_processor
+from exaspim.processes import file_transfer
+from exaspim.processes import data_logger
 # import thorlabs_apt as RotationStage
 import numpy
-from exaspim.config import config
+from exaspim.exaspim_config import ExaspimConfig
 from tifffile import imwrite
-from magicclass import magicclass, set_design, MagicTemplate
-from magicgui import magicgui, widgets, FunctionGui
+from magicclass import magicclass, MagicTemplate
+from magicgui import magicgui
 from napari.qt.threading import thread_worker
-from skimage.transform import downscale_local_mean
-from tigerasi.tiger_controller import TigerController, UM_TO_STEPS
-from math import ceil
+from tigerasi.tiger_controller import UM_TO_STEPS
+
 
 @magicclass(labels=False)
 class UserInterface(MagicTemplate):
@@ -35,7 +28,7 @@ class UserInterface(MagicTemplate):
     def _initialize_hardware(self):
 
         self.camera = Camera.Camera()
-        self.waveform_generator = WaveformGenerator.WaveformGenerator()
+        self.waveform_generator = WaveformGenerator.NI()
         self.data_writer = {}
         self.data_processor = {}
         self.file_transfer = {}
@@ -182,6 +175,7 @@ class UserInterface(MagicTemplate):
                 images = {}
                 mip = {}
                 for ch in self.cfg.channels:
+                    # For some reason: performance boost by organizing chunk size first.
                     images[ch] = numpy.zeros((self.cfg.chunk_size, self.cfg.cam_y,self.cfg.cam_x), dtype=self.cfg.datatype)
                     mip[ch] = numpy.zeros((self.cfg.cam_y,self.cfg.cam_x), dtype=self.cfg.datatype)
                     self.data_writer[ch].configure(self.cfg, tile_name[ch])
@@ -204,6 +198,7 @@ class UserInterface(MagicTemplate):
 
                     while frame_num < self.cfg.n_frames:
 
+                        # This has to be here to fix a race condition.
                         if frame_num == 0:
                             self.waveform_generator.start()
 

@@ -1,25 +1,24 @@
 # Exa-Spim Config
 # No repeat values in here!
 [imaging_specs]
-local_storage_directory = "." # "D:\\"
-external_storage_directory = "." # "Y:\\"
+local_storage_directory = "D:\\"
+external_storage_directory = "Y:\\"
 subject_id = "test_exaspim" #"test_exaspim_15k_64_2ch" # Specimin name.
 tile_prefix = 'tile'  # Zstacks will be named: <tile_prefix>_<x>_<y>_<wavelength>.ims.
 tile_overlap_x_percent = 15
-tile_overlap_y_percent = 15
+tile_overlap_y_percent = 5
 z_step_size_um = 1 # x spacing between tiles. Defaults to same as x,y spacing if not listed.
 volume_x_um = 10615.616
 volume_y_um = 7958.72
 volume_z_um = 64 # long term: chunk size must be multiple of 2048
-laser_wavelengths = [488] # [488, 561, 638, 405]
+laser_wavelengths = [488]# [488, 561]
 
 [design_specs]
-slit_width_pixels = 333.3 # pixels.
+slit_width_pixels = 489.23 # pixels.
 
 [waveform_specs]
 ttl_pulse_time_s = 0.010
 frame_rest_time_s = 0.050
-buffer_time_s = 0.05
 
 [compressor_specs]
 image_stack_chunk_size = 64#32#16
@@ -39,7 +38,7 @@ autoscale = false
 method = 'Full'
 digital_gain_adu = 1
 # bit-depth should be set here.
-line_interval_us = 15  # bit-depth specific. cannot be changed. we should hide this.
+line_interval_us = 20.44 #15  # bit-depth specific. cannot be changed. we should hide this.
 
 [tile_specs]
 x_field_of_view_um = 10615.616 # X image field of view in [um].
@@ -50,7 +49,7 @@ data_type = "uint16"
 
 # Stage
 [sample_stage_specs]
-move_time_um = 0.025 # time it takes the stage to move 1[um] and settle.
+# move_time_um = 0.025 # time it takes the stage to move 1[um] and settle.
 backlash_reset_distance_um = 4 # [um]
 
 # Laser Channel specific settings
@@ -66,19 +65,17 @@ buffer_time_s = 0.001
 [channel_specs.488.camera]
 delay_time_s = 0
 [channel_specs.488.etl]
-delay = 0.0  # seconds.
-settling_time = 0.025  # seconds.
-min_voltage = 2.37
-max_voltage = 2.96
-amplitude = 0.171
-offset = 2.422
-nonlinear = -0.007
+# delay = 0.0  # seconds.
+# settling_time = 0.025  # seconds.
+amplitude = 0.105
+offset = 2.494
+nonlinear = 0.0
 interp_time_s = 0.5
-buffer_time_s = 0.05
-[channel_specs.488.gavlo_a]
-setpoint = 0.0
+buffer_time_s = 0.050
+[channel_specs.488.galvo_a]
+setpoint = -0.50
 [channel_specs.488.galvo_b]
-setpoint = 0.0
+setpoint = -0.50
 [channel_specs.488.kwds]
 port = "COMxx"
 
@@ -94,19 +91,17 @@ buffer_time_s = 0.001
 [channel_specs.561.camera]
 delay_time_s = 0
 [channel_specs.561.etl]
-delay = 0.0  # seconds.
-settling_time = 0.025  # seconds.
-min_voltage = 2.37
-max_voltage = 2.96
-amplitude = 0.171
-offset = 2.422
-nonlinear = -0.007
+# delay = 0.0  # seconds.
+# settling_time = 0.025  # seconds.
+amplitude = 0.105
+offset = 2.494
+nonlinear = 0.0
 interp_time_s = 0.5
-buffer_time_s = 0.05
-[channel_specs.561.gavlo_a]
-setpoint = 0.0
+buffer_time_s = 0.050
+[channel_specs.561.galvo_a]
+setpoint = -0.50
 [channel_specs.561.galvo_b]
-setpoint = 0.0
+setpoint = -0.50
 [channel_specs.561.kwds]
 port='COMxx'
 
@@ -122,19 +117,17 @@ buffer_time_s = 0.001
 [channel_specs.405.camera]
 delay_time_s = 0
 [channel_specs.405.etl]
-delay = 0.0  # seconds.
-settling_time = 0.025  # seconds.
-min_voltage = 2.37
-max_voltage = 2.96
-amplitude = 0.171
-offset = 2.422
-nonlinear = -0.007
+# delay = 0.0  # seconds.
+# settling_time = 0.025  # seconds.
+amplitude = 0.105
+offset = 2.494
+nonlinear = 0.0
 interp_time_s = 0.5
-buffer_time_s = 0.05
-[channel_specs.405.gavlo_a]
-setpoint = 0.0
+buffer_time_s = 0.050
+[channel_specs.405.galvo_a]
+setpoint = -0.50
 [channel_specs.405.galvo_b]
-setpoint = 0.0
+setpoint = -0.50
 [channel_specs.405.kwds]
 port='COMxx'
 
@@ -150,30 +143,23 @@ buffer_time_s = 0.001
 [channel_specs.638.camera]
 delay_time_s = 0
 [channel_specs.638.etl]
-delay = 0.0  # seconds.
-settling_time = 0.025  # seconds.
-min_voltage = 2.37
-max_voltage = 2.96
-amplitude = 0.171
-offset = 2.422
-nonlinear = -0.007
+# delay = 0.0  # seconds.
+# settling_time = 0.025  # seconds.
+amplitude = 0.105
+offset = 2.494
+nonlinear = 0.0
 interp_time_s = 0.5
-buffer_time_s = 0.05
-[channel_specs.638.gavlo_a]
-setpoint = 0.0
+buffer_time_s = 0.050
+[channel_specs.638.galvo_a]
+setpoint = -0.50
 [channel_specs.638.galvo_b]
-setpoint = 0.0
+setpoint = -0.50
 [channel_specs.638.kwds]
 port='COMxx'
 
-
-[daq_ao_names_to_channels] # lookup table for named hardware to AO channels
-etl = 1
-# This will be further populated with the laser ao channels from channel_specs at runtime.
-
 # <SOMETHING>_kwds will be splatted with **kwds to init the corresponding object.
 [daq_driver_kwds]
-dev_name = 'Dev1' # NI Card address as it appears to the PC.
+dev_name = 'Dev2' # NI Card address as it appears to the PC.
 samples_per_sec = 1e4
 [daq_driver_kwds.ao_channels]
 etl = 0
@@ -181,8 +167,10 @@ camera = 1
 stage = 2
 488 = 3
 638 = 4
-561 = 5
+561 = 13 #5 oxxius AO5, MPB AO13
 405 = 6
+galvo_a = 17
+galvo_b = 19
 # Hardware tested successfully. But leave commented out for now.
 # Galvos are wired but we need to be careful in the NI waveform generator and UI to never
 # issue a large step change above 100 mW to protect mirrors.
@@ -197,9 +185,6 @@ x = "y"
 y = "z"
 z = "x"
 
-[filter_wheel_kwds]
-tiger_axis = 1 # filterwheel axis according to the tigerbox.
-
 # For imaging run estimations.
 [estimates]
-tiles_per_second = 15
+# tiles_per_second = 15
