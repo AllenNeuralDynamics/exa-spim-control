@@ -279,7 +279,8 @@ class Exaspim(Spim):
             self.start_pos = None
         # Reset the starting location.
         self.sample_pose.zero_in_place('x', 'y', 'z')
-        self.stage_x_pos_um, self.stage_y_pos_um, self.stage_z_pos_um = ((xtiles-1)*x_grid_step_um, (ytiles-1)*y_grid_step_um, 0) # TODO, z_pos into scan function
+        # (ytiles-1)*y_grid_step_um
+        self.stage_x_pos_um, self.stage_y_pos_um, self.stage_z_pos_um = (0, 0, 0) # TODO, this changes for reversing tiling
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
@@ -290,13 +291,13 @@ class Exaspim(Spim):
             for x in tqdm(range(xtiles), desc="XY Tiling Progress"):
                 self.sample_pose.move_absolute(
                     x=round(self.stage_x_pos_um * STEPS_PER_UM), wait=True)
-                self.stage_y_pos_um = (ytiles-1)*y_grid_step_um
+                self.stage_y_pos_um = 0 # TODO, this changes for reversing tiling
                 for y in range(ytiles):
 
                     self.sample_pose.move_absolute(
                         y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
 
-                    start_tile = 2
+                    start_tile = 0
                     tile_number = y + x*ytiles
 
                     if tile_number >= start_tile:
@@ -368,8 +369,8 @@ class Exaspim(Spim):
                         else:
                             self.log.info("Skipping file transfer process. File "
                                           "is already at its destination.")
-                    self.stage_y_pos_um = self.stage_y_pos_um - y_grid_step_um
-                self.stage_x_pos_um = self.stage_x_pos_um - x_grid_step_um
+                    self.stage_y_pos_um = self.stage_y_pos_um + y_grid_step_um # TODO, this changes for reversing tiling
+                self.stage_x_pos_um = self.stage_x_pos_um + x_grid_step_um # TODO, this changes for reversing tiling
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
                           f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
