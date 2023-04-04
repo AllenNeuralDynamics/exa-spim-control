@@ -148,19 +148,21 @@ class Exaspim(Spim):
 
     def log_system_metadata(self):
         # log tiger settings
-        self.schema_log.info('tiger motorized axes parameters')
+        self.log.info('tiger motorized axes parameters',
+                      extra={'tags': ['schema']})
         build_config = self.tigerbox.get_build_config()
         self.log.debug(f'{build_config}')
         ordered_axes = build_config['Motor Axes']
         for axis in ordered_axes:
             axis_settings = self.tigerbox.get_info(axis)
             for setting in axis_settings:
-                self.schema_log.info(f'{axis} axis, {setting}, {axis_settings[setting]}')
+                self.log.info(f'{axis} axis, {setting}, {axis_settings[setting]}',
+                              extra={'tags': ['schema']})
 
         if self.simulated:
             return
         # log egrabber camera settings
-        self.schema_log.info('egrabber camera parameters')
+        self.log.info('egrabber camera parameters', extra={'tags': ['schema']})
         categories = self.cam.grabber.device.get(query.categories())
         for category in categories:
             features = self.cam.grabber.device.get(query.features_of(category))
@@ -168,7 +170,8 @@ class Exaspim(Spim):
                 if self.cam.grabber.device.get(query.available(feature)):
                     if self.cam.grabber.device.get(query.readable(feature)):
                         if not self.cam.grabber.device.get(query.command(feature)):
-                            self.schema_log.info(f'device, {feature}, {self.cam.grabber.device.get(feature)}')
+                            self.log.info(f'device, {feature}, {self.cam.grabber.device.get(feature)}',
+                                          extra={'tags': ['schema']})
 
         categories = self.cam.grabber.remote.get(query.categories())
         for category in categories:
@@ -178,7 +181,8 @@ class Exaspim(Spim):
                     if self.cam.grabber.remote.get(query.readable(feature)):
                         if not self.cam.grabber.remote.get(query.command(feature)):
                             if feature != "BalanceRatioSelector" and feature != "BalanceWhiteAuto":
-                                self.schema_log.info(f'remote, {feature}, {self.cam.grabber.remote.get(feature)}')
+                                self.log.info(f'remote, {feature}, {self.cam.grabber.remote.get(feature)}',
+                                              extra={'tags': ['schema']})
 
         categories = self.cam.grabber.stream.get(query.categories())
         for category in categories:
@@ -187,7 +191,8 @@ class Exaspim(Spim):
                 if self.cam.grabber.stream.get(query.available(feature)):
                     if self.cam.grabber.stream.get(query.readable(feature)):
                         if not self.cam.grabber.stream.get(query.command(feature)):
-                            self.schema_log.info(f'stream, {feature}, {self.cam.grabber.stream.get(feature)}')
+                            self.log.info(f'stream, {feature}, {self.cam.grabber.stream.get(feature)}',
+                                          extra={'tags': ['schema']})
 
         categories = self.cam.grabber.interface.get(query.categories())
         for category in categories:
@@ -196,7 +201,8 @@ class Exaspim(Spim):
                 if self.cam.grabber.interface.get(query.available(feature)):
                     if self.cam.grabber.interface.get(query.readable(feature)):
                         if not self.cam.grabber.interface.get(query.command(feature)):
-                            self.schema_log.info(f'interface, {feature}, {self.cam.grabber.interface.get(feature)}')
+                            self.log.info(f'interface, {feature}, {self.cam.grabber.interface.get(feature)}',
+                                          extra={'tags': ['schema']})
 
         categories = self.cam.grabber.system.get(query.categories())
         for category in categories:
@@ -205,7 +211,8 @@ class Exaspim(Spim):
                 if self.cam.grabber.system.get(query.available(feature)):
                     if self.cam.grabber.system.get(query.readable(feature)):
                         if not self.cam.grabber.system.get(query.command(feature)):
-                            self.schema_log.info(f'system, {feature}, {self.cam.grabber.system.get(feature)}')
+                            self.log.info(f'system, {feature}, {self.cam.grabber.system.get(feature)}',
+                                          extra={'tags': ['schema']})
 
     def run_from_config(self):
         self.collect_volumetric_image(self.cfg.volume_x_um,
@@ -259,16 +266,17 @@ class Exaspim(Spim):
         # Log relevant info about this imaging run.
         acquisition_params = \
             {
-                'local_storage_directory': local_storage_dir,
-                'external_storage_directory': img_storage_dir,
+                'local_storage_directory': str(local_storage_dir),
+                'external_storage_directory': str(img_storage_dir),
                 'specimen_id': self.cfg.imaging_specs['subject_id'],
                 'subject_id': self.cfg.imaging_specs['subject_id'],
                 'instrument_id': 'exaspim-01',
                 'chamber_immersion_medium': self.cfg.immersion_medium,
                 'chamber_immersion_refractive_index': self.cfg.immersion_medium_refractive_index,
+                'tags': ['schema']
             }
-        self.schema_log.info("acquisition parameters", extra=acquisition_params)
-        self.schema_log.info("Session start.")
+        self.log.info("acquisition parameters", extra=acquisition_params)
+        self.log.info("Session start.", extra={'tags': ['schema']})
         self.log_system_metadata()
         # Update internal state.
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
@@ -293,7 +301,7 @@ class Exaspim(Spim):
         # Capture the fully-formed images as they arrive.
         # Create stacks of tiles along the z axis per channel.
         # Transfer stacks as they arrive to their final destination.
-        self.schema_log.info('tile parameters')
+        self.log.info('tile parameters', extra={'tags': ['schema']})
         try:
             for x in tqdm(range(xtiles), desc="XY Tiling Progress"):
                 self.sample_pose.move_absolute(
@@ -321,9 +329,10 @@ class Exaspim(Spim):
                                 'camera_board_temperature': camera_temperature,
                                 'camera_board_temperature_units': 'C',
                                 'sensor_temperature': sensor_temperature,
-                                'sensor_temperature_units': 'C'
+                                'sensor_temperature_units': 'C',
+                                'tags': ['schema']
                             }
-                        self.schema_log.info('Tile Data', extra=tile_schema_params)
+                        self.log.info('Tile Data', extra=tile_schema_params)
                         # Log file params per laser channel.
                         for laser in self.active_lasers:
                             file_schema_data = \
@@ -344,7 +353,8 @@ class Exaspim(Spim):
                                     'laser_wavelength_units': "nanometers",
                                     'laser_power': 2000,
                                     'laser_power_units': 'milliwatts',
-                                    'filter_wheel_index': 0
+                                    'filter_wheel_index': 0,
+                                    'tags': ['schema']
                                 }
                             laser = str(laser)
                             for key in self.cfg.channel_specs[laser]['etl']:
@@ -353,8 +363,8 @@ class Exaspim(Spim):
                                 file_schema_data[f'daq_galvo_a {key}'] = f'{self.cfg.channel_specs[laser]["galvo_a"][key]}'
                             for key in self.cfg.channel_specs[laser]['galvo_b']:
                                 file_schema_data[f'daq_galvo_b {key}'] = f'{self.cfg.channel_specs[laser]["galvo_b"][key]}'
-                            self.schema_log.info(f'Laser Channel {laser} File Data',
-                                                 extra=file_schema_data)
+                            self.log.info(f'Laser Channel {laser} File Data',
+                                          extra=file_schema_data)
 
                         output_filenames = \
                             self._collect_zstacks(channels, ztiles, z_step_size_um,
@@ -402,7 +412,7 @@ class Exaspim(Spim):
         #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
         #    with TiffWriter(path, bigtiff=True) as tif:
         #        tif.write(mip_data)
-        self.schema_log.info('Session end.')
+        self.log.info('Session end.', extra={'tags': ['schema']})
 
     def _collect_zstacks(self, channels: list[int], frame_count: int,
                          z_step_size_um: float, chunk_size: int,
