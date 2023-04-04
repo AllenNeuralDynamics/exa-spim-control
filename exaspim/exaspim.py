@@ -47,7 +47,8 @@ class Exaspim(Spim):
         self.gavlo_b = None
         self.daq = None
         self.tigerbox = TigerController(**self.cfg.tiger_obj_kwds) if not \
-            self.simulated else SimTiger(**self.cfg.tiger_obj_kwds)
+            self.simulated else SimTiger(**self.cfg.tiger_obj_kwds,
+                                         build_config={'Motor Axes': ['X', 'Y', 'Z', 'M', 'N', 'W', 'V']})
         self.sample_pose = SamplePose(self.tigerbox,
                                       **self.cfg.sample_pose_kwds)
         # Extra Internal State attributes for the current image capture
@@ -91,6 +92,8 @@ class Exaspim(Spim):
             self.last_frame_time = perf_counter()
             self.cam.get_camera_acquisition_state.return_value = {'dropped_frames': 0}
             self.cam.grab_frame = self.__simulated_grab_frame
+            self.cam.get_mainboard_temperature.return_value = 23.15
+            self.cam.get_sensor_temperature.return_value = 23.15
 
     def _setup_waveform_hardware(self, wavelengths: list[int], live: bool = False):
 
@@ -143,6 +146,74 @@ class Exaspim(Spim):
             self.stop_livestream()
             self.start_livestream(active_lasers)  # reapplies waveform settings.
 
+    def log_system_metadata(self):
+        # log tiger settings
+        self.log.info('tiger motorized axes parameters',
+                      extra={'tags': ['schema']})
+        build_config = self.tigerbox.get_build_config()
+        self.log.debug(f'{build_config}')
+        ordered_axes = build_config['Motor Axes']
+        for axis in ordered_axes:
+            axis_settings = self.tigerbox.get_info(axis)
+            for setting in axis_settings:
+                self.log.info(f'{axis} axis, {setting}, {axis_settings[setting]}',
+                              extra={'tags': ['schema']})
+
+        if self.simulated:
+            return
+        # log egrabber camera settings
+        self.log.info('egrabber camera parameters', extra={'tags': ['schema']})
+        categories = self.cam.grabber.device.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.device.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.device.get(query.available(feature)):
+                    if self.cam.grabber.device.get(query.readable(feature)):
+                        if not self.cam.grabber.device.get(query.command(feature)):
+                            self.log.info(f'device, {feature}, {self.cam.grabber.device.get(feature)}',
+                                          extra={'tags': ['schema']})
+
+        categories = self.cam.grabber.remote.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.remote.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.remote.get(query.available(feature)):
+                    if self.cam.grabber.remote.get(query.readable(feature)):
+                        if not self.cam.grabber.remote.get(query.command(feature)):
+                            if feature != "BalanceRatioSelector" and feature != "BalanceWhiteAuto":
+                                self.log.info(f'remote, {feature}, {self.cam.grabber.remote.get(feature)}',
+                                              extra={'tags': ['schema']})
+
+        categories = self.cam.grabber.stream.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.stream.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.stream.get(query.available(feature)):
+                    if self.cam.grabber.stream.get(query.readable(feature)):
+                        if not self.cam.grabber.stream.get(query.command(feature)):
+                            self.log.info(f'stream, {feature}, {self.cam.grabber.stream.get(feature)}',
+                                          extra={'tags': ['schema']})
+
+        categories = self.cam.grabber.interface.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.interface.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.interface.get(query.available(feature)):
+                    if self.cam.grabber.interface.get(query.readable(feature)):
+                        if not self.cam.grabber.interface.get(query.command(feature)):
+                            self.log.info(f'interface, {feature}, {self.cam.grabber.interface.get(feature)}',
+                                          extra={'tags': ['schema']})
+
+        categories = self.cam.grabber.system.get(query.categories())
+        for category in categories:
+            features = self.cam.grabber.system.get(query.features_of(category))
+            for feature in features:
+                if self.cam.grabber.system.get(query.available(feature)):
+                    if self.cam.grabber.system.get(query.readable(feature)):
+                        if not self.cam.grabber.system.get(query.command(feature)):
+                            self.log.info(f'system, {feature}, {self.cam.grabber.system.get(feature)}',
+                                          extra={'tags': ['schema']})
+
     def run_from_config(self):
         self.collect_volumetric_image(self.cfg.volume_x_um,
                                       self.cfg.volume_y_um,
@@ -192,82 +263,26 @@ class Exaspim(Spim):
         self.log.debug(f"Imaging operation will produce: "
                        f"{xtiles} xtiles, {ytiles} ytiles, and {ztiles} ztiles"
                        f"per channel.")
+        # Log relevant info about this imaging run.
+        acquisition_params = \
+            {
+                'local_storage_directory': str(local_storage_dir),
+                'external_storage_directory': str(img_storage_dir),
+                'specimen_id': self.cfg.imaging_specs['subject_id'],
+                'subject_id': self.cfg.imaging_specs['subject_id'],
+                'instrument_id': 'exaspim-01',
+                'chamber_immersion_medium': self.cfg.immersion_medium,
+                'chamber_immersion_refractive_index': self.cfg.immersion_medium_refractive_index,
+                'tags': ['schema']
+            }
+        self.log.info("acquisition parameters", extra=acquisition_params)
+        self.log.info("Session start.", extra={'tags': ['schema']})
+        self.log_system_metadata()
         # Update internal state.
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         self.log.debug(f"Total tiles: {self.total_tiles}.")
         self.frame_index = 0  # Reset image index.
         self.acquiring_images = True
-
-        # Log relevant info about this imaging run.
-        self.schema_log.info('acquisition parameters')
-        self.schema_log.info(f'session_start_time, {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
-        self.schema_log.info(f'local_storage_directory, {local_storage_dir}')
-        self.schema_log.info(f'external_storage_directory, {img_storage_dir}')
-        self.schema_log.info(f'specimen_id,{self.cfg.imaging_specs["subject_id"]}')
-        self.schema_log.info(f'subject_id,{self.cfg.imaging_specs["subject_id"]}')
-        self.schema_log.info(f'instrument_id, exaspim-01')
-        self.schema_log.info(f'chamber_immersion_medium, {self.cfg.immersion_medium}')
-        self.schema_log.info(f'chamber_immersion_refractive_index, '
-                             f'{self.cfg.immersion_medium_refractive_index}')
-
-        # log tiger settings
-        self.schema_log.info('tiger motorized axes parameters')
-        build_config = self.tigerbox.get_build_config()
-        self.log.debug(f'{build_config}')
-        ordered_axes = build_config['Motor Axes']
-        for axis in ordered_axes:
-            axis_settings = self.tigerbox.get_info(axis)
-            for setting in axis_settings:
-                self.schema_log.info(f'{axis} axis, {setting}, {axis_settings[setting]}')
-
-        # log egrabber camera settings
-        self.schema_log.info('egrabber camera parameters')
-        categories = self.cam.grabber.device.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.device.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.device.get(query.available(feature)):
-                    if self.cam.grabber.device.get(query.readable(feature)):
-                        if not self.cam.grabber.device.get(query.command(feature)):
-                            self.schema_log.info(f'device, {feature}, {self.cam.grabber.device.get(feature)}')
-
-        categories = self.cam.grabber.remote.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.remote.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.remote.get(query.available(feature)):
-                    if self.cam.grabber.remote.get(query.readable(feature)):
-                        if not self.cam.grabber.remote.get(query.command(feature)):
-                            if feature != "BalanceRatioSelector" and feature != "BalanceWhiteAuto":
-                                self.schema_log.info(f'remote, {feature}, {self.cam.grabber.remote.get(feature)}')
-
-        categories = self.cam.grabber.stream.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.stream.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.stream.get(query.available(feature)):
-                    if self.cam.grabber.stream.get(query.readable(feature)):
-                        if not self.cam.grabber.stream.get(query.command(feature)):
-                            self.schema_log.info(f'stream, {feature}, {self.cam.grabber.stream.get(feature)}')
-
-        categories = self.cam.grabber.interface.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.interface.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.interface.get(query.available(feature)):
-                    if self.cam.grabber.interface.get(query.readable(feature)):
-                        if not self.cam.grabber.interface.get(query.command(feature)):
-                            self.schema_log.info(f'interface, {feature}, {self.cam.grabber.interface.get(feature)}')
-
-        categories = self.cam.grabber.system.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.system.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.system.get(query.available(feature)):
-                    if self.cam.grabber.system.get(query.readable(feature)):
-                        if not self.cam.grabber.system.get(query.command(feature)):
-                            self.schema_log.info(f'system, {feature}, {self.cam.grabber.system.get(feature)}')
-
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         stack_transfer_workers = {}  # moves z-stacks to destination folder.
@@ -279,92 +294,107 @@ class Exaspim(Spim):
             self.start_pos = None
         # Reset the starting location.
         self.sample_pose.zero_in_place('x', 'y', 'z')
-        self.stage_x_pos_um, self.stage_y_pos_um, self.stage_z_pos_um = (0, 0, 0) # TODO, z_pos into scan function
+        # (ytiles-1)*y_grid_step_um
+        self.stage_x_pos_um, self.stage_y_pos_um, self.stage_z_pos_um = (0, 0, 0) # TODO, this changes for reversing tiling
         # Iterate through the volume through z, then x, then y.
         # Play waveforms for the laser, camera trigger, and stage trigger.
         # Capture the fully-formed images as they arrive.
         # Create stacks of tiles along the z axis per channel.
         # Transfer stacks as they arrive to their final destination.
-        self.schema_log.info('tile parameters')
+        self.log.info('tile parameters', extra={'tags': ['schema']})
         try:
             for x in tqdm(range(xtiles), desc="XY Tiling Progress"):
                 self.sample_pose.move_absolute(
                     x=round(self.stage_x_pos_um * STEPS_PER_UM), wait=True)
-                self.stage_y_pos_um = 0
+                self.stage_y_pos_um = 0 # TODO, this changes for reversing tiling
                 for y in range(ytiles):
-                    tile_number = y + x*ytiles
                     self.sample_pose.move_absolute(
                         y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
-                    self.log.info(f"tile: ({x}, {y}); stage_position: "
-                                  f"({self.stage_x_pos_um:.3f}[um], "
-                                  f"{self.stage_y_pos_um:.3f}[um])")
-                    stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
+                    start_tile = 0
+                    tile_number = y + x*ytiles
+                    if tile_number >= start_tile:
+                        self.log.info(f"tile: ({x}, {y}); stage_position: "
+                                      f"({self.stage_x_pos_um:.3f}[um], "
+                                      f"{self.stage_y_pos_um:.3f}[um])")
+                        stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
+                        # Logging for JSON schema
+                        etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
+                        camera_temperature = self.cam.get_mainboard_temperature()
+                        sensor_temperature = self.cam.get_sensor_temperature()
+                        tile_schema_params = \
+                            {
+                                'tile_number': tile_number,
+                                'etl_temperature': etl_temperature,
+                                'etl_temperature_units': 'C',
+                                'camera_board_temperature': camera_temperature,
+                                'camera_board_temperature_units': 'C',
+                                'sensor_temperature': sensor_temperature,
+                                'sensor_temperature_units': 'C',
+                                'tags': ['schema']
+                            }
+                        self.log.info('Tile Data', extra=tile_schema_params)
+                        # Log file params per laser channel.
+                        for laser in self.active_lasers:
+                            file_schema_data = \
+                                {
+                                    'file_name': f'{stack_prefix}_ch_{laser}.ims',
+                                    'channel_name': f'{laser}',
+                                    'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
+                                    'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
+                                    'z_voxel_size': z_step_size_um,
+                                    'voxel_size_units': 'micrometers',
+                                    'tile_x_position': self.stage_x_pos_um * 0.001,
+                                    'tile_y_position': self.stage_y_pos_um * 0.001,
+                                    'tile_z_position': self.stage_z_pos_um * 0.001,
+                                    'tile_position_units': 'millimeters',
+                                    'lightsheet_angle': 0,
+                                    'lightsheet_angle_units': 'degrees',
+                                    'laser_wavelength': laser,
+                                    'laser_wavelength_units': "nanometers",
+                                    'laser_power': 2000,
+                                    'laser_power_units': 'milliwatts',
+                                    'filter_wheel_index': 0,
+                                    'tags': ['schema']
+                                }
+                            laser = str(laser)
+                            for key in self.cfg.channel_specs[laser]['etl']:
+                                file_schema_data[f'daq_etl {key}'] = f'{self.cfg.channel_specs[laser]["etl"][key]}'
+                            for key in self.cfg.channel_specs[laser]['galvo_a']:
+                                file_schema_data[f'daq_galvo_a {key}'] = f'{self.cfg.channel_specs[laser]["galvo_a"][key]}'
+                            for key in self.cfg.channel_specs[laser]['galvo_b']:
+                                file_schema_data[f'daq_galvo_b {key}'] = f'{self.cfg.channel_specs[laser]["galvo_b"][key]}'
+                            self.log.info(f'Laser Channel {laser} File Data',
+                                          extra=file_schema_data)
 
-                    # Logging for JSON schema
-                    self.schema_log.info(f'tile_number, {tile_number}')
-                    etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
-                    self.schema_log.info(f'etl_temperature, {etl_temperature} degrees celsius')
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
-                    camera_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.schema_log.info(f'camera_board_temperature, {camera_temperature} degrees celsius')
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Sensor")
-                    sensor_temperature = self.cam.grabber.remote.get("DeviceTemperature")
-                    self.schema_log.info(f'sensor_temperature, {sensor_temperature} degrees celsius')
-                    self.cam.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
+                        output_filenames = \
+                            self._collect_zstacks(channels, ztiles, z_step_size_um,
+                                                  chunk_size, local_storage_dir,
+                                                  stack_prefix)
 
-                    for laser in self.active_lasers:
-                        laser = str(laser)
-                        self.schema_log.info(f'file_name, {stack_prefix}_ch_{laser}.ims')
-                        self.schema_log.info(f'channel_name, {laser}')
-                        self.schema_log.info(
-                            f'x_voxel_size, {self.cfg.tile_size_x_um / self.cfg.sensor_column_count} micrometers')
-                        self.schema_log.info(
-                            f'y_voxel_size, {self.cfg.tile_size_y_um / self.cfg.sensor_row_count} micrometers')
-                        self.schema_log.info(f'z_voxel_size, {z_step_size_um} micrometers')
-                        self.schema_log.info(f'tile_x_position, {self.stage_x_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'tile_y_position, {self.stage_y_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'tile_z_position, {self.stage_z_pos_um * 0.001} millimeters')
-                        self.schema_log.info(f'lightsheet_angle, 0 degrees')
-                        self.schema_log.info(f'laser_wavelength, {laser} nanometers')
-                        self.schema_log.info(f'laser_power, 2000 milliwatts')
-                        self.schema_log.info(f'filter_wheel_index, 0')
-                        # Every variable in calculate waveforms
-                        for key in self.cfg.channel_specs[laser]['etl']:
-                            self.schema_log.info(f'daq_etl {key}: {self.cfg.channel_specs[laser]["etl"][key]}')
-                        for key in self.cfg.channel_specs[laser]['galvo_a']:
-                            self.schema_log.info(f'daq_galvo_a {key}, {self.cfg.channel_specs[laser]["galvo_a"][key]}')
-                        for key in self.cfg.channel_specs[laser]['galvo_b']:
-                            self.schema_log.info(f'daq_galvo_b {key}, {self.cfg.channel_specs[laser]["galvo_b"][key]}')
-
-                    output_filenames = \
-                        self._collect_zstacks(channels, ztiles, z_step_size_um,
-                                              chunk_size, local_storage_dir,
-                                              stack_prefix)
-
-                    # Start transferring zstack file to its destination.
-                    # Note: Image transfer should be faster than image capture,
-                    #   but we still wait for prior process to finish.
-                    if stack_transfer_workers:
-                        self.log.info("Waiting for zstack transfer processes "
-                                      "to complete.")
-                        for channel in list(stack_transfer_workers.keys()):
-                            worker = stack_transfer_workers.pop(channel)
-                            worker.join()
-                    # Kick off Stack transfer processes per channel.
-                    # Bail if we don't need to transfer anything.
-                    if img_storage_dir:
-                        for channel, filename in output_filenames.items():
-                            self.log.info(f"Starting transfer process for {filename}.")
-                            stack_transfer_workers[channel] = \
-                                FileTransfer(local_storage_dir / filename,
-                                             img_storage_dir / filename,
-                                             self.cfg.ftp, self.cfg.ftp_flags)
-                            stack_transfer_workers[channel].start()
-                    else:
-                        self.log.info("Skipping file transfer process. File "
-                                      "is already at its destination.")
-                    self.stage_y_pos_um += y_grid_step_um
-                self.stage_x_pos_um += x_grid_step_um
+                        # Start transferring zstack file to its destination.
+                        # Note: Image transfer should be faster than image capture,
+                        #   but we still wait for prior process to finish.
+                        if stack_transfer_workers:
+                            self.log.info("Waiting for zstack transfer processes "
+                                          "to complete.")
+                            for channel in list(stack_transfer_workers.keys()):
+                                worker = stack_transfer_workers.pop(channel)
+                                worker.join()
+                        # Kick off Stack transfer processes per channel.
+                        # Bail if we don't need to transfer anything.
+                        if img_storage_dir:
+                            for channel, filename in output_filenames.items():
+                                self.log.info(f"Starting transfer process for {filename}.")
+                                stack_transfer_workers[channel] = \
+                                    FileTransfer(local_storage_dir / filename,
+                                                 img_storage_dir / filename,
+                                                 self.cfg.ftp, self.cfg.ftp_flags)
+                                stack_transfer_workers[channel].start()
+                        else:
+                            self.log.info("Skipping file transfer process. File "
+                                          "is already at its destination.")
+                    self.stage_y_pos_um = self.stage_y_pos_um + y_grid_step_um # TODO, this changes for reversing tiling
+                self.stage_x_pos_um = self.stage_x_pos_um + x_grid_step_um # TODO, this changes for reversing tiling
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
                           f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
@@ -382,7 +412,7 @@ class Exaspim(Spim):
         #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
         #    with TiffWriter(path, bigtiff=True) as tif:
         #        tif.write(mip_data)
-        self.schema_log.info(f'session_end_time, {datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}')
+        self.log.info('Session end.', extra={'tags': ['schema']})
 
     def _collect_zstacks(self, channels: list[int], frame_count: int,
                          z_step_size_um: float, chunk_size: int,
