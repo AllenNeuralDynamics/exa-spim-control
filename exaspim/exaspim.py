@@ -97,9 +97,11 @@ class Exaspim(Spim):
 
     def _setup_waveform_hardware(self, wavelengths: list[int], live: bool = False):
 
+        if not self.livestream_enabled.is_set():  # Only configures daq on the initiation of livestream
+            self.log.info("Configuring NIDAQ")
+            self.ni.configure(live=live)
+
         self.active_lasers = wavelengths
-        self.log.info("Configuring NIDAQ")
-        self.ni.configure(live=live)
         self.log.info("Generating waveforms.")
         voltages_t = generate_waveforms(self.cfg, plot=True, channels=self.active_lasers, live=live)
         self.log.info("Writing waveforms to hardware.")
@@ -222,6 +224,8 @@ class Exaspim(Spim):
                                       self.cfg.tile_overlap_x_percent,
                                       self.cfg.tile_overlap_y_percent,
                                       self.cfg.z_step_size_um,
+                                      self.cfg.start_tile_index,
+                                      self.cfg.end_tile_index,
                                       self.cfg.tile_prefix,
                                       self.cfg.compressor_chunk_size,
                                       self.cache_storage_dir,
@@ -236,7 +240,9 @@ class Exaspim(Spim):
                                  tile_overlap_x_percent: float,
                                  tile_overlap_y_percent: float,
                                  z_step_size_um: float,
-                                 tile_prefix: str,
+                                 start_tile_index: int = None,
+                                 end_tile_index: int = None,
+                                 tile_prefix: str = "",
                                  compressor_chunk_size: int = None,
                                  local_storage_dir: Path = Path("."),
                                  img_storage_dir: Path = None,
@@ -258,6 +264,15 @@ class Exaspim(Spim):
                                                       z_step_size_um,
                                                       volume_x_um, volume_y_um,
                                                       volume_z_um)
+        start_tile_index = 0 if start_tile_index is None else start_tile_index
+        end_tile_index = xtiles * ytiles - 1 \
+            if end_tile_index is None else end_tile_index
+        if start_tile_index > 0:
+            self.log.warning(f"Starting volumetric image acquisition from tile "
+                             f"{start_tile_index}.")
+        if end_tile_index != xtiles * ytiles - 1:
+            self.log.warning(f"Ending volumetric image acquisition early. "
+                             f"Last tile index is {end_tile_index}")
         self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
                        f"{y_grid_step_um:.3f}[um] in y.")
         self.log.debug(f"Imaging operation will produce: "
@@ -302,17 +317,17 @@ class Exaspim(Spim):
         # Create stacks of tiles along the z axis per channel.
         # Transfer stacks as they arrive to their final destination.
         self.log.info('tile parameters', extra={'tags': ['schema']})
+        curr_tile_index = 0
         try:
             for x in tqdm(range(xtiles), desc="XY Tiling Progress"):
                 self.sample_pose.move_absolute(
                     x=round(self.stage_x_pos_um * STEPS_PER_UM), wait=True)
-                self.stage_y_pos_um = 0 # TODO, this changes for reversing tiling
+                # self.stage_y_pos_um = 0 # TODO, this changes for reversing tiling
+                self.stage_y_pos_um = (ytiles-1)*y_grid_step_um
                 for y in range(ytiles):
                     self.sample_pose.move_absolute(
                         y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
-                    start_tile = 0
-                    tile_number = y + x*ytiles
-                    if tile_number >= start_tile:
+                    if start_tile_index <= curr_tile_index <= end_tile_index:
                         self.log.info(f"tile: ({x}, {y}); stage_position: "
                                       f"({self.stage_x_pos_um:.3f}[um], "
                                       f"{self.stage_y_pos_um:.3f}[um])")
@@ -323,7 +338,7 @@ class Exaspim(Spim):
                         sensor_temperature = self.cam.get_sensor_temperature()
                         tile_schema_params = \
                             {
-                                'tile_number': tile_number,
+                                'tile_number': curr_tile_index,
                                 'etl_temperature': etl_temperature,
                                 'etl_temperature_units': 'C',
                                 'camera_board_temperature': camera_temperature,
@@ -393,7 +408,8 @@ class Exaspim(Spim):
                         else:
                             self.log.info("Skipping file transfer process. File "
                                           "is already at its destination.")
-                    self.stage_y_pos_um = self.stage_y_pos_um + y_grid_step_um # TODO, this changes for reversing tiling
+                    curr_tile_index += 1
+                    self.stage_y_pos_um = self.stage_y_pos_um - y_grid_step_um # TODO, this changes for reversing tiling
                 self.stage_x_pos_um = self.stage_x_pos_um + x_grid_step_um # TODO, this changes for reversing tiling
             # Acquisition cleanup.
             self.log.info(f"Total imaging time: "
@@ -590,7 +606,6 @@ class Exaspim(Spim):
     def start_livestream(self, wavelength: list[int] = None):
 
         # Bail early if it's started.
-        print(wavelength)
         if self.livestream_enabled.is_set():
             self.log.warning("Not starting. Livestream is already running.")
             return
