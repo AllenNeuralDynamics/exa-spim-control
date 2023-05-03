@@ -10,6 +10,8 @@ volume_x_um = 10615.616
 volume_y_um = 7958.7
 volume_z_um = 100
 laser_wavelengths = [ 561,]
+# start_tile_index = 0
+# end_tile_index = 0
 
 [experiment_specs]
 experimenters_name = "Sim Robot"
