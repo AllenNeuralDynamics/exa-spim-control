@@ -110,3 +110,58 @@ class Camera:
         # TODO: do we need to set the temp selector back, or can we skip this?
         self.grabber.remote.set("DeviceTemperatureSelector", "Mainboard")
         return sensor_temperature
+
+    def schema_log_system_metadata(self):
+        """Log camera metadata with the schema tag."""
+        # log egrabber camera settings
+        self.log.info('egrabber camera parameters', extra={'tags': ['schema']})
+        categories = self.grabber.device.get(query.categories())
+        for category in categories:
+            features = self.grabber.device.get(query.features_of(category))
+            for feature in features:
+                if self.grabber.device.get(query.available(feature)):
+                    if self.grabber.device.get(query.readable(feature)):
+                        if not self.grabber.device.get(query.command(feature)):
+                            self.log.info(f'device, {feature}, {self.grabber.device.get(feature)}',
+                                          extra={'tags': ['schema']})
+
+        categories = self.grabber.remote.get(query.categories())
+        for category in categories:
+            features = self.grabber.remote.get(query.features_of(category))
+            for feature in features:
+                if self.grabber.remote.get(query.available(feature)):
+                    if self.grabber.remote.get(query.readable(feature)):
+                        if not self.grabber.remote.get(query.command(feature)):
+                            if feature != "BalanceRatioSelector" and feature != "BalanceWhiteAuto":
+                                self.log.info(f'remote, {feature}, {self.grabber.remote.get(feature)}',
+                                              extra={'tags': ['schema']})
+
+        categories = self.grabber.stream.get(query.categories())
+        for category in categories:
+            features = self.grabber.stream.get(query.features_of(category))
+            for feature in features:
+                if self.grabber.stream.get(query.available(feature)):
+                    if self.grabber.stream.get(query.readable(feature)):
+                        if not self.grabber.stream.get(query.command(feature)):
+                            self.log.info(f'stream, {feature}, {self.grabber.stream.get(feature)}',
+                                          extra={'tags': ['schema']})
+
+        categories = self.grabber.interface.get(query.categories())
+        for category in categories:
+            features = self.grabber.interface.get(query.features_of(category))
+            for feature in features:
+                if self.grabber.interface.get(query.available(feature)):
+                    if self.grabber.interface.get(query.readable(feature)):
+                        if not self.grabber.interface.get(query.command(feature)):
+                            self.log.info(f'interface, {feature}, {self.grabber.interface.get(feature)}',
+                                          extra={'tags': ['schema']})
+
+        categories = self.grabber.system.get(query.categories())
+        for category in categories:
+            features = self.grabber.system.get(query.features_of(category))
+            for feature in features:
+                if self.grabber.system.get(query.available(feature)):
+                    if self.grabber.system.get(query.readable(feature)):
+                        if not self.grabber.system.get(query.command(feature)):
+                            self.log.info(f'system, {feature}, {self.grabber.system.get(feature)}',
+                                          extra={'tags': ['schema']})
