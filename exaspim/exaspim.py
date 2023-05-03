@@ -160,61 +160,8 @@ class Exaspim(Spim):
             for setting in axis_settings:
                 self.log.info(f'{axis} axis, {setting}, {axis_settings[setting]}',
                               extra={'tags': ['schema']})
-
-        if self.simulated:
-            return
-        # log egrabber camera settings
-        self.log.info('egrabber camera parameters', extra={'tags': ['schema']})
-        categories = self.cam.grabber.device.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.device.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.device.get(query.available(feature)):
-                    if self.cam.grabber.device.get(query.readable(feature)):
-                        if not self.cam.grabber.device.get(query.command(feature)):
-                            self.log.info(f'device, {feature}, {self.cam.grabber.device.get(feature)}',
-                                          extra={'tags': ['schema']})
-
-        categories = self.cam.grabber.remote.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.remote.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.remote.get(query.available(feature)):
-                    if self.cam.grabber.remote.get(query.readable(feature)):
-                        if not self.cam.grabber.remote.get(query.command(feature)):
-                            if feature != "BalanceRatioSelector" and feature != "BalanceWhiteAuto":
-                                self.log.info(f'remote, {feature}, {self.cam.grabber.remote.get(feature)}',
-                                              extra={'tags': ['schema']})
-
-        categories = self.cam.grabber.stream.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.stream.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.stream.get(query.available(feature)):
-                    if self.cam.grabber.stream.get(query.readable(feature)):
-                        if not self.cam.grabber.stream.get(query.command(feature)):
-                            self.log.info(f'stream, {feature}, {self.cam.grabber.stream.get(feature)}',
-                                          extra={'tags': ['schema']})
-
-        categories = self.cam.grabber.interface.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.interface.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.interface.get(query.available(feature)):
-                    if self.cam.grabber.interface.get(query.readable(feature)):
-                        if not self.cam.grabber.interface.get(query.command(feature)):
-                            self.log.info(f'interface, {feature}, {self.cam.grabber.interface.get(feature)}',
-                                          extra={'tags': ['schema']})
-
-        categories = self.cam.grabber.system.get(query.categories())
-        for category in categories:
-            features = self.cam.grabber.system.get(query.features_of(category))
-            for feature in features:
-                if self.cam.grabber.system.get(query.available(feature)):
-                    if self.cam.grabber.system.get(query.readable(feature)):
-                        if not self.cam.grabber.system.get(query.command(feature)):
-                            self.log.info(f'system, {feature}, {self.cam.grabber.system.get(feature)}',
-                                          extra={'tags': ['schema']})
+        # Log camera settings.
+        self.cam.schema_log_system_metadata()
 
     def run_from_config(self):
         self.collect_volumetric_image(self.cfg.volume_x_um,
@@ -332,63 +279,18 @@ class Exaspim(Spim):
                                       f"({self.stage_x_pos_um:.3f}[um], "
                                       f"{self.stage_y_pos_um:.3f}[um])")
                         stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
-                        # Logging for JSON schema
-                        etl_temperature = self.tigerbox.get_etl_temp('V')  # TODO: this is hardcoded as V axis right now
-                        camera_temperature = self.cam.get_mainboard_temperature()
-                        sensor_temperature = self.cam.get_sensor_temperature()
-                        tile_schema_params = \
-                            {
-                                'tile_number': curr_tile_index,
-                                'etl_temperature': etl_temperature,
-                                'etl_temperature_units': 'C',
-                                'camera_board_temperature': camera_temperature,
-                                'camera_board_temperature_units': 'C',
-                                'sensor_temperature': sensor_temperature,
-                                'sensor_temperature_units': 'C',
-                                'tags': ['schema']
-                            }
-                        self.log.info('Tile Data', extra=tile_schema_params)
-                        # Log file params per laser channel.
-                        for laser in self.active_lasers:
-                            file_schema_data = \
-                                {
-                                    'file_name': f'{stack_prefix}_ch_{laser}.ims',
-                                    'channel_name': f'{laser}',
-                                    'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
-                                    'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
-                                    'z_voxel_size': z_step_size_um,
-                                    'voxel_size_units': 'micrometers',
-                                    'tile_x_position': self.stage_x_pos_um * 0.001,
-                                    'tile_y_position': self.stage_y_pos_um * 0.001,
-                                    'tile_z_position': self.stage_z_pos_um * 0.001,
-                                    'tile_position_units': 'millimeters',
-                                    'lightsheet_angle': 0,
-                                    'lightsheet_angle_units': 'degrees',
-                                    'laser_wavelength': laser,
-                                    'laser_wavelength_units': "nanometers",
-                                    'laser_power': 2000,
-                                    'laser_power_units': 'milliwatts',
-                                    'filter_wheel_index': 0,
-                                    'tags': ['schema']
-                                }
-                            laser = str(laser)
-                            for key in self.cfg.channel_specs[laser]['etl']:
-                                file_schema_data[f'daq_etl {key}'] = f'{self.cfg.channel_specs[laser]["etl"][key]}'
-                            for key in self.cfg.channel_specs[laser]['galvo_a']:
-                                file_schema_data[f'daq_galvo_a {key}'] = f'{self.cfg.channel_specs[laser]["galvo_a"][key]}'
-                            for key in self.cfg.channel_specs[laser]['galvo_b']:
-                                file_schema_data[f'daq_galvo_b {key}'] = f'{self.cfg.channel_specs[laser]["galvo_b"][key]}'
-                            self.log.info(f'Laser Channel {laser} File Data',
-                                          extra=file_schema_data)
-
+                        # Log stack capture start state.
+                        self.log_stack_acquisition_params(curr_tile_index,
+                                                          stack_prefix,
+                                                          z_step_size_um)
+                        # Collect the Z stacks for all channels.
                         output_filenames = \
                             self._collect_zstacks(channels, ztiles, z_step_size_um,
                                                   chunk_size, local_storage_dir,
                                                   stack_prefix)
-
                         # Start transferring zstack file to its destination.
                         # Note: Image transfer should be faster than image capture,
-                        #   but we still wait for prior process to finish.
+                        #   but we still wait for prior processes to finish.
                         if stack_transfer_workers:
                             self.log.info("Waiting for zstack transfer processes "
                                           "to complete.")
@@ -695,3 +597,52 @@ class Exaspim(Spim):
         self.ni.close()
         # TODO: power down hardware.
         super().close()  # Call this last.
+
+    def log_stack_acquisition_params(self, curr_tile_index, stack_prefix,
+                                     z_step_size_um):
+        """helper function in main acquisition loop to log the current state
+        before capturing a stack of images per channel."""
+        tile_schema_params = \
+            {
+                'tile_number': curr_tile_index,
+                'etl_temperature': self.tigerbox.get_etl_temp('V'),  # FIXME: this is hardcoded as V axis
+                'etl_temperature_units': 'C',
+                'camera_board_temperature': self.cam.get_mainboard_temperature(),
+                'camera_board_temperature_units': 'C',
+                'sensor_temperature': self.cam.get_sensor_temperature(),
+                'sensor_temperature_units': 'C',
+                'tags': ['schema']
+            }
+        self.log.info('Tile Data', extra=tile_schema_params)
+        # Log file params per laser channel.
+        for laser in self.active_lasers:
+            file_schema_data = \
+                {
+                    'file_name': f'{stack_prefix}_ch_{laser}.ims',
+                    'channel_name': f'{laser}',
+                    'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
+                    'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
+                    'z_voxel_size': z_step_size_um,
+                    'voxel_size_units': 'micrometers',
+                    'tile_x_position': self.stage_x_pos_um * 0.001,
+                    'tile_y_position': self.stage_y_pos_um * 0.001,
+                    'tile_z_position': self.stage_z_pos_um * 0.001,
+                    'tile_position_units': 'millimeters',
+                    'lightsheet_angle': 0,
+                    'lightsheet_angle_units': 'degrees',
+                    'laser_wavelength': laser,
+                    'laser_wavelength_units': "nanometers",
+                    'laser_power': 2000,
+                    'laser_power_units': 'milliwatts',
+                    'filter_wheel_index': 0,
+                    'tags': ['schema']
+                }
+            laser = str(laser)
+            for key in self.cfg.channel_specs[laser]['etl']:
+                file_schema_data[f'daq_etl {key}'] = f'{self.cfg.channel_specs[laser]["etl"][key]}'
+            for key in self.cfg.channel_specs[laser]['galvo_a']:
+                file_schema_data[f'daq_galvo_a {key}'] = f'{self.cfg.channel_specs[laser]["galvo_a"][key]}'
+            for key in self.cfg.channel_specs[laser]['galvo_b']:
+                file_schema_data[f'daq_galvo_b {key}'] = f'{self.cfg.channel_specs[laser]["galvo_b"][key]}'
+            self.log.info(f'Laser Channel {laser} File Data',
+                          extra=file_schema_data)
