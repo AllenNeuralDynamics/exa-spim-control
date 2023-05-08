@@ -104,6 +104,21 @@ class ExaspimConfig(SpimConfig):
     def immersion_medium_refractive_index(self, ri: float):
         self.experiment_specs['immersion_medium_refractive_index'] = ri
 
+    @property
+    def x_anatomical_direction(self):
+        """Anatomical orientation along x"""
+        return self.experiment_specs['x_anatomical_direction']
+
+    @property
+    def y_anatomical_direction(self):
+        """Anatomical orientation along y"""
+        return self.experiment_specs['y_anatomical_direction']
+
+    @property
+    def z_anatomical_direction(self):
+        """Anatomical orientation along z"""
+        return self.experiment_specs['z_anatomical_direction']
+
     # Stage Specs
     @property
     def z_step_size_um(self):
