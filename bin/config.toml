@@ -17,6 +17,9 @@ laser_wavelengths = [ 561,]
 experimenters_name = "Sim Robot"
 immersion_medium = "0.05X SSC"
 immersion_medium_refractive_index = 1.33
+x_anatomical_direction = "Anterior_to_posterior"
+y_anatomical_direction = "Inferior_to_superior"
+z_anatomical_direction = "Left_to_right"
 
 [design_specs]
 slit_width_pixels = 489.0

@@ -71,7 +71,7 @@ class Exaspim(Spim):
         self._setup_motion_stage()
         self._setup_camera()
         # Grab a background image for livestreaming.
-        self._grab_background_image()
+        # self._grab_background_image()
 
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
@@ -102,6 +102,9 @@ class Exaspim(Spim):
         if self.simulated:
             self.last_frame_time = perf_counter()
             self.cam.get_camera_acquisition_state.return_value = {'dropped_frames': 0}
+            self.cam.collect_background.return_value = \
+                np.zeros((self.cfg.sensor_row_count, self.cfg.sensor_column_count),
+                         dtype=self.cfg.image_dtype)
             self.cam.grab_frame = self.__simulated_grab_frame
             self.cam.get_mainboard_temperature.return_value = 23.15
             self.cam.get_sensor_temperature.return_value = 23.15
@@ -231,11 +234,7 @@ class Exaspim(Spim):
         if end_tile_index != xtiles * ytiles - 1:
             self.log.warning(f"Ending volumetric image acquisition early. "
                              f"Last tile index is {end_tile_index}")
-        self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
-                       f"{y_grid_step_um:.3f}[um] in y.")
-        self.log.debug(f"Imaging operation will produce: "
-                       f"{xtiles} xtiles, {ytiles} ytiles, and {ztiles} ztiles"
-                       f"per channel.")
+
         # Log relevant info about this imaging run.
         self.log_system_metadata()
         self.log.info('session started', extra={'tags': ['schema']})
@@ -257,6 +256,11 @@ class Exaspim(Spim):
         # Update internal state.
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         self.log.debug(f"Total tiles: {self.total_tiles}.")
+        self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
+                       f"{y_grid_step_um:.3f}[um] in y.")
+        self.log.debug(f"Imaging operation will produce: "
+                       f"{xtiles} xtiles, {ytiles} ytiles, and {ztiles} ztiles"
+                       f" per channel.")
         self.frame_index = 0  # Reset image index.
         self.acquiring_images = True
         start_time = perf_counter()  # For logging elapsed time.
@@ -595,7 +599,8 @@ class Exaspim(Spim):
         # Return a dummy image if none are available.
         if not img_buffer or self.prev_frame_chunk_index is None:
             if self.livestream_enabled.is_set():
-                return self.downsampler.compute(np.clip(self.cam.grab_frame()-self.bkg_image+100, 100, 2**16-1)-100)
+                # return self.downsampler.compute(np.clip(self.cam.grab_frame()-self.bkg_image+100, 100, 2**16-1)-100)
+                return self.downsampler.compute(self.cam.grab_frame())
             elif self.simulated:
                 # Display "white noise" if no image is available.
                 return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
