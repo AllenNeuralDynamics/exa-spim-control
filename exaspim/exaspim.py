@@ -306,7 +306,7 @@ class Exaspim(Spim):
                         self.log.info("Starting background image.")
                         bkg_img = self.cam.collect_background(frame_average=10)
                         # Save background image TIFF file
-                        tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img)
+                        tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img, tile=(256, 256))
                         self.log.info("Completed background image.")
 
                         # Collect the Z stacks for all channels.
