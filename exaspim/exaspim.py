@@ -425,12 +425,12 @@ class Exaspim(Spim):
         self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
                                                        z_step_size_um / 1.0e3)
 
-        if self.overview_set.is_set():
-            if self.overview_process is not None:  # If doing an overview image, wait till previous tile is done
-                if self.overview_process.is_alive():
-                    self.overview_process.join()
-            self.overview_process = Thread(target= lambda: self.overview_worker(frame_count))
-            self.overview_process.start()
+        # if self.overview_set.is_set():
+        #     if self.overview_process is not None:  # If doing an overview image, wait till previous tile is done
+        #         if self.overview_process.is_alive():
+        #             self.overview_process.join()
+        #     self.overview_process = Thread(target= lambda: self.overview_worker(frame_count))
+        #     self.overview_process.start()
 
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
@@ -512,7 +512,6 @@ class Exaspim(Spim):
                     # Clear previous chunk index, so we don't provide a
                     # picture that has not yet been written to this chunk.
                     self.prev_frame_chunk_index = None
-
                     with self.chunk_lock:
                         for ch_index in channels:
                             self.img_buffers[ch_index].toggle_buffers()
@@ -520,6 +519,8 @@ class Exaspim(Spim):
                                 self.stack_writer_workers[ch_index].shm_name = \
                                     self.img_buffers[ch_index].read_buf_mem_name
                                 self.stack_writer_workers[ch_index].done_reading.clear()
+            if self.overview_set.is_set():
+                self.overview_worker(frame_count)
             capture_successful = True
             self.log.debug(f"Stack imaging time: "
                            f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
@@ -598,10 +599,8 @@ class Exaspim(Spim):
         y_grid_step_px = \
             ceil((1 - self.cfg.tile_overlap_y_percent / 100.0) * cols) #self.cfg.tile_size_y_um
         reshaped = np.zeros((xtiles*x_grid_step_px+overlap_x, ytiles*y_grid_step_px+overlap_y))
-
-        for x in range(0, xtiles):
-            for y in range(0, ytiles):
-
+        for y in range(0, ytiles):
+            for x in range(0, xtiles):
                 reshaped[x*x_grid_step_px:(x*x_grid_step_px) + rows, y*y_grid_step_px:(y*y_grid_step_px) + cols] = \
                     self.image_overview[0]
                 del self.image_overview[0]
@@ -621,17 +620,16 @@ class Exaspim(Spim):
 
         channel = self.cfg.imaging_specs['laser_wavelengths'][0]
         downsampled = [None]*frame_count
-        i = 0
-        while i in range(0, frame_count):
-            if self.prev_frame_chunk_index is None or i > self.prev_frame_chunk_index:
-                continue
-            else:
-                with self.chunk_lock:
-                    downsampled[i] = self.downsampler.compute(self.img_buffers[channel].write_buf[i])[4]
-                    i += 1
+
+        for i in range(0, frame_count):
+
+            with self.chunk_lock:
+                self.log.info('Calling downsample from overview_worker')
+                downsampled[i] = self.downsampler.compute(self.img_buffers[channel].write_buf[i])[4]
+
 
         mipstack = np.max(downsampled, axis=0)            # Max projection
-        self.image_overview.append(mipstack)
+        self.image_overview.append(np.flip(mipstack, axis=1))
 
     def _all_stack_workers_idle(self):
         """Helper function. True if all StackWriters are idle."""
@@ -690,6 +688,7 @@ class Exaspim(Spim):
             sleep((1 / self.cfg.daq_obj_kwds['livestream_frequency_hz']))
             yield
 
+
     def stop_livestream(self):
         # Bail early if it's already stopped.
         if not self.livestream_enabled.is_set():
@@ -729,6 +728,7 @@ class Exaspim(Spim):
         if img_buffer and self.prev_frame_chunk_index is not None and self.acquiring_images:
             # Only access buffer if it isn't being toggled.
             with self.chunk_lock:
+                self.log.info('Calling downsample from get_latest_image')
                 return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index])
 
         # Return a dummy image if none are available.
@@ -741,6 +741,8 @@ class Exaspim(Spim):
                 return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
                                                                                 self.cfg.sensor_column_count),
                                                                   dtype=self.cfg.image_dtype))
+            else:
+                return None
 
     def get_mem_consumption(self):
         """get memory consumption as a percent for this process and all
@@ -754,6 +756,7 @@ class Exaspim(Spim):
     def close(self):
         """Safely close all open hardware connections."""
         # Close any opened shared memory.
+
         for ch_name, buf in self.img_buffers.items():
             buf.close_and_unlink()
         self.ni.close()
@@ -791,7 +794,7 @@ class Exaspim(Spim):
         # Log system states.
         system_schema_data = \
             {
-                'etl_temperature': self.tigerbox.get_etl_temp('V'),  # FIXME: this is hardcoded as V axis
+                'etl_temperature': -1, # self.tigerbox.get_etl_temp('V'),  # FIXME: this is hardcoded as V axis
                 'etl_temperature_units': 'C',
                 'camera_board_temperature': self.cam.get_mainboard_temperature(),
                 'camera_board_temperature_units': 'C',
