@@ -109,16 +109,28 @@ class ExaspimConfig(SpimConfig):
         """Anatomical orientation along x"""
         return self.experiment_specs['x_anatomical_direction']
 
+    @x_anatomical_direction.setter
+    def x_anatomical_direction(self, direction):
+        """Anatomical orientation along x"""
+        self.experiment_specs['x_anatomical_direction'] = direction
     @property
     def y_anatomical_direction(self):
         """Anatomical orientation along y"""
         return self.experiment_specs['y_anatomical_direction']
 
+    @y_anatomical_direction.setter
+    def y_anatomical_direction(self, direction):
+        """Anatomical orientation along x"""
+        self.experiment_specs['y_anatomical_direction'] = direction
     @property
     def z_anatomical_direction(self):
         """Anatomical orientation along z"""
         return self.experiment_specs['z_anatomical_direction']
 
+    @z_anatomical_direction.setter
+    def z_anatomical_direction(self, direction):
+        """Anatomical orientation along x"""
+        self.experiment_specs['z_anatomical_direction'] = direction
     # Stage Specs
     @property
     def z_step_size_um(self):

@@ -253,25 +253,37 @@ class Exaspim(Spim):
                              f"Last tile index is {end_tile_index}")
 
         # Log relevant info about this imaging run.
-        self.log_system_metadata()
-        self.log.info('session started', extra={'tags': ['schema']})
+        # self.log_system_metadata()
+        # TODO NEW BUG, this seems to overload the Tiger responses
         self.start_time = datetime.now()
 
         acquisition_params = \
             {
+                'session_start_time': datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
                 'local_storage_directory': str(local_storage_dir),
                 'external_storage_directory': str(img_storage_dir),
                 'specimen_id': self.cfg.imaging_specs['subject_id'],
                 'subject_id': self.cfg.imaging_specs['subject_id'],
                 'instrument_id': 'exaspim-01',
-                'chamber_immersion_medium': self.cfg.immersion_medium,
-                'chamber_immersion_refractive_index': self.cfg.immersion_medium_refractive_index,
+                'chamber_immersion': {'medium': self.cfg.immersion_medium,
+                                      'refractive_index': self.cfg.immersion_medium_refractive_index},
+                'experimenter_full_name': [self.cfg.experimenters_name],  # Needs to be in list for AIND Schema,
                 'x_anatomical_direction': self.cfg.x_anatomical_direction,
                 'y_anatomical_direction': self.cfg.y_anatomical_direction,
                 'z_anatomical_direction': self.cfg.z_anatomical_direction,
                 'tags': ['schema']
             }
         self.log.info("acquisition parameters", extra=acquisition_params)
+
+        axes_data = \
+            {
+                'axes': [{'name': 'X', 'dimension': 2, 'direction' : self.cfg.x_anatomical_direction},
+                         {'name': 'Y', 'dimension': 1, 'direction' : self.cfg.y_anatomical_direction},
+                         {'name': 'Z', 'dimension': 0, 'direction' : self.cfg.z_anatomical_direction}],
+                'tags': ['schema']
+            }
+        self.log.info('axes_data', extra=axes_data)
+
         # Update internal state.
         self.total_tiles = xtiles * ytiles * ztiles * len(channels)
         self.log.debug(f"Total tiles: {self.total_tiles}.")
@@ -319,14 +331,15 @@ class Exaspim(Spim):
                         # TODO, should we do the arithmetic outside of the Camera class?
                         # TODO, should we transfer this small file or just write directly over the network?
                         tile_start = time()
-                        # Collect background image for this tile
-                        # self.background_image.set()
-                        # self.log.info("Starting background image.")
-                        # bkg_img = self.cam.collect_background(frame_average=10)
-                        # # Save background image TIFF file
-                        # tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img, tile=(256, 256))
-                        # self.log.info("Completed background image.")
-                        # self.background_image.clear()
+                        if not self.overview_set.is_set():
+                            # Collect background image for this tile
+                            self.background_image.set()
+                            self.log.info("Starting background image.")
+                            bkg_img = self.cam.collect_background(frame_average=10)
+                            # Save background image TIFF file
+                            tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img, tile=(256, 256))
+                            self.log.info("Completed background image.")
+                            self.background_image.clear()
                         # Collect the Z stacks for all channels.
                         output_filenames = \
                             self._collect_zstacks(channels, ztiles, z_step_size_um,
@@ -379,7 +392,9 @@ class Exaspim(Spim):
         #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
         #    with TiffWriter(path, bigtiff=True) as tif:
         #        tif.write(mip_data)
-        self.log.info('session ended', extra={'tags': ['schema']})
+        acquisition_params = {'session_end_time': datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                              'tags': ['schema']}
+        self.log.info("acquisition parameters", extra=acquisition_params)
 
     def _collect_zstacks(self, channels: list[int], frame_count: int,
                          z_step_size_um: float, chunk_size: int,
@@ -424,14 +439,6 @@ class Exaspim(Spim):
         self.sample_pose.move_absolute(z=round(stage_z_pos))
         self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
                                                        z_step_size_um / 1.0e3)
-
-        # if self.overview_set.is_set():
-        #     if self.overview_process is not None:  # If doing an overview image, wait till previous tile is done
-        #         if self.overview_process.is_alive():
-        #             self.overview_process.join()
-        #     self.overview_process = Thread(target= lambda: self.overview_worker(frame_count))
-        #     self.overview_process.start()
-
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
             stack_file_names[ch] = f"{stack_prefix}_ch_{ch}.ims"
@@ -520,7 +527,8 @@ class Exaspim(Spim):
                                     self.img_buffers[ch_index].read_buf_mem_name
                                 self.stack_writer_workers[ch_index].done_reading.clear()
             if self.overview_set.is_set():
-                self.overview_worker(frame_count)
+                # Read from read buff because buffer is toggled before calling function
+                self.mip_stack(self.img_buffers[channels[0]].read_buf, frame_count)
             capture_successful = True
             self.log.debug(f"Stack imaging time: "
                            f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
@@ -591,18 +599,22 @@ class Exaspim(Spim):
         # Create empty array size of overview image
         rows = self.image_overview[0].shape[0]
         cols = self.image_overview[0].shape[1]
-        overlap_y = round((self.cfg.tile_overlap_y_percent / 100) * cols)
-        overlap_x = round((self.cfg.tile_overlap_x_percent / 100) * rows)
+        overlap_y = round((15 / 100) * rows)
+        overlap_x = round((15 / 100) * cols)
 
         x_grid_step_px = \
-            ceil((1 - self.cfg.tile_overlap_x_percent / 100.0) * rows) #self.cfg.tile_size_x_um
+            ceil((1 - 15 / 100.0) * cols)
         y_grid_step_px = \
-            ceil((1 - self.cfg.tile_overlap_y_percent / 100.0) * cols) #self.cfg.tile_size_y_um
-        reshaped = np.zeros((xtiles*x_grid_step_px+overlap_x, ytiles*y_grid_step_px+overlap_y))
-        for y in range(0, ytiles):
-            for x in range(0, xtiles):
-                reshaped[x*x_grid_step_px:(x*x_grid_step_px) + rows, y*y_grid_step_px:(y*y_grid_step_px) + cols] = \
-                    self.image_overview[0]
+            ceil((1 - 15 / 100.0) * rows)
+        reshaped = np.zeros((ytiles * y_grid_step_px + overlap_y, xtiles * x_grid_step_px + overlap_x))
+        for x in range(0, xtiles):
+            for y in range(0, ytiles):
+                if x == 0:
+                    reshaped[y * y_grid_step_px:(y * y_grid_step_px) + rows, -(x * x_grid_step_px) - cols:] = \
+                        self.image_overview[0]
+                else:
+                    reshaped[y * y_grid_step_px:(y * y_grid_step_px) + rows,
+                    -(x * x_grid_step_px) - cols:-x * x_grid_step_px] = self.image_overview[0]
                 del self.image_overview[0]
 
         tifffile.imwrite(fr'{self.cfg.local_storage_dir}\overview_img_{"_".join(map(str, self.cfg.imaging_specs["laser_wavelengths"]))}'
@@ -611,25 +623,22 @@ class Exaspim(Spim):
 
         self.overview_set.clear()
 
-
+        print(reshaped)
         return [reshaped], xtiles, ytiles
 
-    def overview_worker(self, frame_count):
+    def mip_stack(self, buffer, frame_count):
 
-        """Create overview image from a stack"""
+        """Create a mip from a stack."""
 
-        channel = self.cfg.imaging_specs['laser_wavelengths'][0]
         downsampled = [None]*frame_count
 
-        for i in range(0, frame_count):
-
+        for i in range(frame_count):
             with self.chunk_lock:
                 self.log.info('Calling downsample from overview_worker')
-                downsampled[i] = self.downsampler.compute(self.img_buffers[channel].write_buf[i])[4]
-
+                downsampled[i] = self.downsampler.compute(buffer[i])[4]
 
         mipstack = np.max(downsampled, axis=0)            # Max projection
-        self.image_overview.append(np.flip(mipstack, axis=1))
+        self.image_overview.append(mipstack)
 
     def _all_stack_workers_idle(self):
         """Helper function. True if all StackWriters are idle."""
@@ -772,6 +781,19 @@ class Exaspim(Spim):
                 {
                     'tile_number': curr_tile_index,
                     'file_name': f'{stack_prefix}_ch_{laser}.ims',
+                    'coordinate_transformations': [
+                        {'scale': [self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
+                                   self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
+                                   z_step_size_um]},
+                        {'translation': [self.stage_x_pos_um * 0.001,
+                                         self.stage_y_pos_um * 0.001,
+                                         self.stage_z_pos_um * 0.001]}
+                    ],
+                    'channel': {'channel_name': '',
+                                'laser_wavelength': str(laser),
+                                'laser_power': '1000.0',
+                                'filter_wheel_index': 0
+                                },
                     'channel_name': f'{laser}',
                     'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
                     'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
