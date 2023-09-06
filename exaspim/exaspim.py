@@ -103,7 +103,7 @@ class Exaspim(Spim):
                 # else set axis to map to no joystick direction
                 joystick_mapping[axis.lower()] = JoystickInput(0)
         self.tigerbox.bind_axis_to_joystick_input(**joystick_mapping)
-        
+
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
         # Disable backlash compensation.
@@ -807,7 +807,7 @@ class Exaspim(Spim):
                                          self.stage_y_pos_um * 0.001,
                                          self.stage_z_pos_um * 0.001]}
                     ],
-                    'channel': {'channel_name': '',
+                    'channel': {'channel_name': str(laser),
                                 'laser_wavelength': str(laser),
                                 'laser_power': '1000.0',
                                 'filter_wheel_index': 0

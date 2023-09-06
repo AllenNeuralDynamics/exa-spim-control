@@ -59,6 +59,13 @@ class ExaspimConfig(SpimConfig):
     def get_etl_buffer_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['buffer_time_s']
 
+    # Channel Specs
+    def get_channel_ao_voltage(self, wl):
+        return self.channel_specs[wl]['ao_voltage']
+
+    def set_channel_ao_voltage(self, wl, value):
+        self.channel_specs[wl]['ao_voltage'] = value
+
     # Waveform Specs
     @property
     def ttl_pulse_time(self):
