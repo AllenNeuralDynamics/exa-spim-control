@@ -94,7 +94,7 @@ class Exaspim(Spim):
     def _setup_joystick(self):
         """Configure joystick based on value in config"""
 
-        joystick_mapping = self.cfg.joystick_kwds['axis_map']
+        joystick_mapping = self.cfg.joystick_kwds['axis_map'].copy()    # Don't overwrite config values
         for axis in self.tigerbox.get_build_config()['Motor Axes']: # Loop through axes in tigerbox
             if axis.lower() in joystick_mapping.keys():
                 # If axis specified in config, map it to correct joystick
@@ -102,8 +102,9 @@ class Exaspim(Spim):
             else:
                 # else set axis to map to no joystick direction
                 joystick_mapping[axis.lower()] = JoystickInput(0)
+        print(self.tigerbox.get_joystick_axis_mapping())
         self.tigerbox.bind_axis_to_joystick_input(**joystick_mapping)
-
+        print(self.tigerbox.get_joystick_axis_mapping())
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
         # Disable backlash compensation.
@@ -780,6 +781,8 @@ class Exaspim(Spim):
 
     def close(self):
         """Safely close all open hardware connections."""
+
+        self._setup_joystick()  # Leave joystick in expected state upon shutting down
         # Close any opened shared memory.
 
         for ch_name, buf in self.img_buffers.items():
