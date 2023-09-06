@@ -22,6 +22,7 @@ class ExaspimConfig(SpimConfig):
         self.camera_specs = self.cfg['camera_specs']
 
         # Keyword arguments for instantiating objects.
+        self.joystick_kwds = self.cfg['joystick_kwds']
         self.sample_pose_kwds = self.cfg['sample_pose_kwds']
         self.tiger_obj_kwds = self.cfg['tiger_controller_driver_kwds']
         # Other obj kwds are generated dynamically.

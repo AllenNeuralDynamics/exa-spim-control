@@ -25,6 +25,7 @@ from tigerasi.tiger_controller import TigerController, STEPS_PER_UM
 from tigerasi.sim_tiger_controller import SimTigerController as SimTiger
 from spim_core.spim_base import Spim, lock_external_user_input
 from spim_core.devices.tiger_components import SamplePose
+from tigerasi.device_codes import JoystickInput
 from egrabber import query
 
 
@@ -83,11 +84,26 @@ class Exaspim(Spim):
         # Internal arrays/iamges
         self.bkg_image = None
         # Setup hardware according to the config.
+        self._setup_joystick()
         self._setup_motion_stage()
         self._setup_camera()
         # Grab a background image for livestreaming.
         # self._grab_background_image()
         self.chunk_lock = threading.Lock()
+
+    def _setup_joystick(self):
+        """Configure joystick based on value in config"""
+
+        joystick_mapping = self.cfg.joystick_kwds['axis_map']
+        for axis in self.tigerbox.get_build_config()['Motor Axes']: # Loop through axes in tigerbox
+            if axis.lower() in joystick_mapping.keys():
+                # If axis specified in config, map it to correct joystick
+                joystick_mapping[axis.lower()] = JoystickInput(joystick_mapping[axis.lower()])
+            else:
+                # else set axis to map to no joystick direction
+                joystick_mapping[axis.lower()] = JoystickInput(0)
+        self.tigerbox.bind_axis_to_joystick_input(**joystick_mapping)
+
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
         # Disable backlash compensation.
