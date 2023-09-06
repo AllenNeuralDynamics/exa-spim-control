@@ -102,9 +102,8 @@ class Exaspim(Spim):
             else:
                 # else set axis to map to no joystick direction
                 joystick_mapping[axis.lower()] = JoystickInput(0)
-        print(self.tigerbox.get_joystick_axis_mapping())
         self.tigerbox.bind_axis_to_joystick_input(**joystick_mapping)
-        print(self.tigerbox.get_joystick_axis_mapping())
+        
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
         # Disable backlash compensation.
