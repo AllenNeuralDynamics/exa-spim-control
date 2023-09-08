@@ -27,7 +27,7 @@ from spim_core.spim_base import Spim, lock_external_user_input
 from spim_core.devices.tiger_components import SamplePose
 from tigerasi.device_codes import JoystickInput
 from egrabber import query
-
+import sys
 
 # Constants
 IMARIS_TIMEOUT_S = 0.1
@@ -70,6 +70,7 @@ class Exaspim(Spim):
         self.start_time = None # Start time of scan
         self.tile_time_s = None # Time it takes to complete one stack
         self.stack_transfer_workers = {}  # moves z-stacks to destination folder.
+        self.lasers = {}  # populated in _setup_lasers.
 
         self.livestream_enabled = Event()
         self.deallocating = Event()
@@ -85,6 +86,7 @@ class Exaspim(Spim):
         self.bkg_image = None
         # Setup hardware according to the config.
         self._setup_joystick()
+        self._setup_lasers()
         self._setup_motion_stage()
         self._setup_camera()
         # Grab a background image for livestreaming.
@@ -103,6 +105,24 @@ class Exaspim(Spim):
                 # else set axis to map to no joystick direction
                 joystick_mapping[axis.lower()] = JoystickInput(0)
         self.tigerbox.bind_axis_to_joystick_input(**joystick_mapping)
+
+    def _setup_lasers(self):
+        """Setup lasers that will be used for imaging. Warm them up, etc."""
+
+        self.log.debug(f"Setting up lasers")
+        for wl, specs in self.cfg.channel_specs.items():
+            if 'port' in specs['kwds'].keys() and specs['kwds']['port'] == 'COMxx':
+                self.log.warning(f'Skipping setup for laser {wl} due to no COM port specified')
+                continue
+            laser_class = getattr(sys.modules[specs['driver']], specs['module'])
+            kwds = dict(specs['kwds'])
+            for k, v in kwds.items():
+                if v.split('.')[0] in dir(sys.modules[specs['driver']]):
+                    arg_class = getattr(sys.modules[specs['driver']], v.split('.')[0])
+                    kwds[k] = getattr(arg_class, '.'.join(v.split('.')[1:]))
+                else:
+                    kwds[k] = eval(v) if '.' in v else v
+            self.lasers[wl] = laser_class(**kwds)
 
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""

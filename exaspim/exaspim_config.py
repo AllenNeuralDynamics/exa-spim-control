@@ -64,6 +64,7 @@ class ExaspimConfig(SpimConfig):
         return self.channel_specs[wl]['ao_voltage']
 
     def set_channel_ao_voltage(self, wl, value):
+
         self.channel_specs[wl]['ao_voltage'] = value
 
     # Waveform Specs
