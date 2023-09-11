@@ -114,16 +114,19 @@ class Exaspim(Spim):
             if 'port' in specs['kwds'].keys() and specs['kwds']['port'] == 'COMxx':
                 self.log.warning(f'Skipping setup for laser {wl} due to no COM port specified')
                 continue
+            __import__(specs['driver'])
             laser_class = getattr(sys.modules[specs['driver']], specs['module'])
             kwds = dict(specs['kwds'])
             for k, v in kwds.items():
-                if v.split('.')[0] in dir(sys.modules[specs['driver']]):
+                if str(v).split('.')[0] in dir(sys.modules[specs['driver']]):
                     arg_class = getattr(sys.modules[specs['driver']], v.split('.')[0])
                     kwds[k] = getattr(arg_class, '.'.join(v.split('.')[1:]))
                 else:
-                    kwds[k] = eval(v) if '.' in v else v
-            self.lasers[wl] = laser_class(**kwds)
+                    kwds[k] = eval(v) if '.' in str(v) else v
 
+            self.lasers[wl] = laser_class(**kwds) if not self.simulated else Mock()
+            self.log.debug(f"Successfully setup {wl} laser")
+            
     def _setup_motion_stage(self):
         """Configure the sample stage according to the config."""
         # Disable backlash compensation.
