@@ -18,8 +18,10 @@ from exaspim.operations.waveform_generator import generate_waveforms
 from exaspim.operations.gpu_img_downsample import DownSample
 from threading import Event, Thread
 from exaspim.processes.stack_writer import StackWriter
+from exaspim.processes.mip_processor import MIPProcessor
 from exaspim.processes.file_transfer import FileTransfer
 from exaspim.data_structures.shared_double_buffer import SharedDoubleBuffer
+from multiprocessing.shared_memory import SharedMemory
 from math import ceil, floor
 from tigerasi.tiger_controller import TigerController, STEPS_PER_UM
 from tigerasi.sim_tiger_controller import SimTigerController as SimTiger
@@ -83,7 +85,10 @@ class Exaspim(Spim):
         self.overview_process = None
 
         # Internal arrays/iamges
-        self.bkg_image = None
+        self.bkg_image = None  # background image
+        self.mip_processes = {}
+        self.mip_images_shm = {}
+        self.mip_images = {}
         # Setup hardware according to the config.
         self._setup_joystick()
         self._setup_lasers()
@@ -261,7 +266,8 @@ class Exaspim(Spim):
                                  compressor_chunk_size: int = None,
                                  local_storage_dir: Path = Path("."),
                                  img_storage_dir: Path = None,
-                                 deriv_storage_dir: Path = None):
+                                 deriv_storage_dir: Path = None,
+                                 do_mip: bool = True):
         # TODO: pass in start position as a parameter.
         """Collect a volumetric image with specified size/overlap specs."""
         self.acquiring_images = True
@@ -280,6 +286,16 @@ class Exaspim(Spim):
                                                       z_step_size_um,
                                                       volume_x_um, volume_y_um,
                                                       volume_z_um)
+
+        # TODO: we need to compute the size (in Pixels) of the xy, yz, zx MIPs.
+        x0 = self.first_img_centroid_x_um - (self.pixel_x_size_um * 0.5 * self.cfg.column_count_px)
+        y0 = self.first_img_centroid_y_um - (self.pixel_y_size_um * 0.5 * self.rows)
+        z0 = 0
+        xf = self.first_img_centroid_x_um + (self.pixel_x_size_um * 0.5 * self.cols)
+        yf = self.first_img_centroid_y_um + (self.pixel_y_size_um * 0.5 * self.rows)
+        zf = z0 + self.img_count * self.pixel_z_size_um
+        # TODO: finish above.
+
         self.x_y_tiles = xtiles*ytiles
         start_tile_index = 0 if start_tile_index is None else start_tile_index
         end_tile_index = xtiles * ytiles - 1 \
@@ -335,6 +351,18 @@ class Exaspim(Spim):
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         self._setup_waveform_hardware(channels)
+        # Setup MIP process if specified to do so.
+        if do_mip:
+            img_shape = (self.cfg.sensor_row_count, self.cfg.sensor_column_count)
+            img_bytes = int(np.prod(img_shape, dtype=np.int64) * np.dtype(self.cfg.image_dtype).itemsize)
+            for ch in channels:
+                # Allocate shared memory location for latest image for mip process.
+                self.mip_images_shm[ch] = SharedMemory(create=True, size=img_bytes)
+                self.mip_images[ch] = np.zeros(img_shape, dtype=self.cfg.image_dtype,
+                                               buf=self.mip_images_shm[ch].buf)
+                # Create the process.
+                self.mip_process[ch] = MIPProcessor(self.
+                                                    self.mip_images_shm.name)
         # Move sample to preset starting position if specified.
         # TODO: pass this in as a parameter.
         if self.start_pos is not None:
@@ -529,6 +557,14 @@ class Exaspim(Spim):
                                    f"{ch_index}[nm] channel.")
                     self.img_buffers[ch_index].write_buf[chunk_index] = \
                         self.cam.grab_frame()
+                    # Also write a copy of the latest image to a location where
+                    # the MIP processor can process it.
+                    # First make sure that the mip process isn't using previous
+                    # image. (Should never block, but safeguard it anyways.)
+                    while not self.mip_process.is_busy():
+                        pass
+                    self.mip_img[ch_index] = \
+                        self.img_buffers[ch_index].write_buf[chunk_index]
                     self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
                 # offer it to a live display upon request.
