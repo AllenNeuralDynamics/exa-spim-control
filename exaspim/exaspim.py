@@ -287,15 +287,12 @@ class Exaspim(Spim):
                                                       volume_x_um, volume_y_um,
                                                       volume_z_um)
 
-        # TODO: we need to compute the size (in Pixels) of the xy, yz, zx MIPs.
-        x0 = self.first_img_centroid_x_um - (self.pixel_x_size_um * 0.5 * self.cfg.column_count_px)
-        y0 = self.first_img_centroid_y_um - (self.pixel_y_size_um * 0.5 * self.rows)
-        z0 = 0
-        xf = self.first_img_centroid_x_um + (self.pixel_x_size_um * 0.5 * self.cols)
-        yf = self.first_img_centroid_y_um + (self.pixel_y_size_um * 0.5 * self.rows)
-        zf = z0 + self.img_count * self.pixel_z_size_um
-        # TODO: finish above.
-
+        # Compute size of total image volue in voxels for MIP construction.
+        volume_x_voxels, volume_y_voxels, volume_z_voxels = \
+            self.get_image_extents_voxels(tile_overlap_x_percent,
+                                          tile_overlap_y_percent,
+                                          z_step_size_um, volume_x_um,
+                                          volume_y_um, volume_z_um)
         self.x_y_tiles = xtiles*ytiles
         start_tile_index = 0 if start_tile_index is None else start_tile_index
         end_tile_index = xtiles * ytiles - 1 \
@@ -361,8 +358,14 @@ class Exaspim(Spim):
                 self.mip_images[ch] = np.zeros(img_shape, dtype=self.cfg.image_dtype,
                                                buf=self.mip_images_shm[ch].buf)
                 # Create the process.
-                self.mip_process[ch] = MIPProcessor(self.
-                                                    self.mip_images_shm.name)
+                self.mip_processes[ch] = MIPProcessor(volume_x_voxels, volume_y_voxels,
+                                                      volume_z_voxels,
+                                                      self.cfg.sensor_column_count,
+                                                      self.cfg.sensor_row_count,
+                                                      self.cfg.image_dtype,
+                                                      self.mip_images_shm[ch].name,
+                                                      self.deriv_storage_dir)
+                self.mip_processes[ch].run()
         # Move sample to preset starting position if specified.
         # TODO: pass this in as a parameter.
         if self.start_pos is not None:
@@ -561,9 +564,10 @@ class Exaspim(Spim):
                     # the MIP processor can process it.
                     # First make sure that the mip process isn't using previous
                     # image. (Should never block, but safeguard it anyways.)
-                    while not self.mip_process.is_busy():
+                    while not any([mp.is_busy.is_set() for mp in self.mip_processes.values()]):
                         pass
-                    self.mip_img[ch_index] = \
+                    # TODO: make sure this actually deep copies the array.
+                    self.mip_images[ch_index] = \
                         self.img_buffers[ch_index].write_buf[chunk_index]
                     self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
