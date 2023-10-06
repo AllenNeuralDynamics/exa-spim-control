@@ -776,7 +776,7 @@ class Exaspim(Spim):
         if img_buffer and self.prev_frame_chunk_index is not None and self.acquiring_images:
             # Only access buffer if it isn't being toggled.
             with self.chunk_lock:
-                self.log.info('Calling downsample from get_latest_image')
+                self.log.debug('Calling downsample from get_latest_image')
                 return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index])
 
         # Return a dummy image if none are available.
@@ -831,9 +831,12 @@ class Exaspim(Spim):
                                          self.stage_z_pos_um * 0.001]}
                     ],
                     'channel': {'channel_name': str(laser),
-                                'laser_wavelength': str(laser),
-                                'laser_power': '1000.0',
-                                'filter_wheel_index': 0
+                                'light_source_name': str(laser),
+                                'excitation_wavelength': str(laser),
+                                'excitation_power': '1000.0',
+                                'filter_wheel_index': 0,
+                                'filter_names': [],
+                                'detector_name': '',
                                 },
                     'channel_name': f'{laser}',
                     'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
