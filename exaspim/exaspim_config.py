@@ -312,7 +312,7 @@ class ExaspimConfig(SpimConfig):
         try:
             super().sanity_check()
         except AssertionError as e:
-            error_msgs.append(e)
+            error_msgs.append(str(e))
         # Proceed through ExaSPIM-specific checks:
         # Check that slit width >0 but less than the camera's number of rows.
         if self.slit_width <= 0 or self.slit_width > self.sensor_row_count:
