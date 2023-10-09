@@ -263,7 +263,14 @@ class Exaspim(Spim):
                                  img_storage_dir: Path = None,
                                  deriv_storage_dir: Path = None):
         # TODO: pass in start position as a parameter.
-        """Collect a volumetric image with specified size/overlap specs."""
+        """Collect a volumetric image with specified size/overlap specs.
+        
+        :param local_storage_dir: temporary location for writing an image
+            stack. This folder should have a fast disk write speed.
+        :param img_storage_dir: final destination to write all image stacks.
+          This folder must have sufficient disk space to hold the entire
+          data set. May be the same as `local_storage_dir`.
+        """
         self.acquiring_images = True
         # Memory checks.
         chunk_size = self.cfg.compressor_chunk_size \
@@ -395,7 +402,8 @@ class Exaspim(Spim):
                                 worker.join()
                         # Kick off Stack transfer processes per channel.
                         # Bail if we don't need to transfer anything.
-                        if img_storage_dir:
+                        if img_storage_dir and \
+                                img_storage_dir != local_storage_dir:
                             for channel, filename in output_filenames.items():
                                 self.log.info(f"Starting transfer process for {filename}.")
                                 self.stack_transfer_workers[channel] = \

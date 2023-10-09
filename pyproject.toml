@@ -31,7 +31,8 @@ dependencies = [
     "toml >= 0.10.2",
     "mock >= 4.0.3",
     "coloredlogs >= 15.0.1",
-    "gitPython >= 3.1.27",
+    "pygit2 >= 1.13.1",
+
 ]
 
 [project.urls]

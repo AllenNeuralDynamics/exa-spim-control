@@ -1,6 +1,6 @@
 [imaging_specs]
 local_storage_directory = "."#"D:\\"
-external_storage_directory = "."#"Y:\\"
+external_storage_directory = ".."#"Y:\\"
 subject_id = "sim_test"
 tile_prefix = "tile"
 tile_overlap_x_percent = 15
@@ -17,9 +17,12 @@ laser_wavelengths = [ 561,]
 experimenters_name = "Sim Robot"
 immersion_medium = "0.05X SSC"
 immersion_medium_refractive_index = 1.33
+x_anatomical_direction = "Posterior_to_anterior"
+y_anatomical_direction = "Inferior_to_superior"
+z_anatomical_direction = "Right_to_left"
 
 [design_specs]
-slit_width_pixels = 489.0
+slit_width_pixels = 489.0 # 10 # sim size must be reduced for PCs with less ram.
 
 [waveform_specs]
 ttl_pulse_time_s = 0.01
@@ -43,8 +46,8 @@ line_interval_us = 20.44
 [tile_specs]
 x_field_of_view_um = 10615.616
 y_field_of_view_um = 7958.72
-row_count_pixels = 10640
-column_count_pixels = 14192
+row_count_pixels = 10640 # 320 # sim size must be reduced for PCs with less ram.
+column_count_pixels = 14192 # 240
 data_type = "uint16"
 
 [sample_stage_specs]
@@ -75,24 +78,33 @@ driver = "Oxxius"
 color = "blue"
 hex_color = "#00ff92"
 ao_channel = 3
+ao_voltage = 10.0
 
 [channel_specs.561]
 driver = "Oxxius"
 color = "yellowgreen"
 hex_color = "#c6ff00"
 ao_channel = 5
+ao_voltage = 10.0
 
 [channel_specs.405]
 driver = "Oxxius"
 color = "purple"
 hex_color = "#000000"
 ao_channel = 6
+ao_voltage = 10.0
 
 [channel_specs.638]
 driver = "Oxxius"
 color = "red"
 hex_color = "#000000"
 ao_channel = 4
+ao_voltage = 10.0
+
+[joystick_kwds.axis_map]
+x = 2
+y = 3
+z = 22
 
 [sample_pose_kwds.axis_map]
 x = "y"
