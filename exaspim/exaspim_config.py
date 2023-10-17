@@ -104,6 +104,21 @@ class ExaspimConfig(SpimConfig):
     def immersion_medium_refractive_index(self, ri: float):
         self.experiment_specs['immersion_medium_refractive_index'] = ri
 
+    @property
+    def x_anatomical_direction(self):
+        """Anatomical orientation along x"""
+        return self.experiment_specs['x_anatomical_direction']
+
+    @property
+    def y_anatomical_direction(self):
+        """Anatomical orientation along y"""
+        return self.experiment_specs['y_anatomical_direction']
+
+    @property
+    def z_anatomical_direction(self):
+        """Anatomical orientation along z"""
+        return self.experiment_specs['z_anatomical_direction']
+
     # Stage Specs
     @property
     def z_step_size_um(self):
@@ -112,6 +127,34 @@ class ExaspimConfig(SpimConfig):
     @z_step_size_um.setter
     def z_step_size_um(self, um: float):
         self.cfg['imaging_specs']['z_step_size_um'] = um
+
+    @property
+    def start_tile_index(self):
+        """If specified, the tile index from which to start collecting z stacks.
+
+        Note: z stack index must be in the range of [0, xtiles * ytiles - 1].
+
+        Note: z stack index increments first in the y dimension; then in the
+        x dimension. i.e: in a grid of 5 xtiles by 3 ytiles, tile "0" is (0, 0),
+        tile "2" is (0, 2), tile "3" is (1, 0), etc.
+        """
+        return self.imaging_specs.get('start_tile_index', None)
+
+    @start_tile_index.setter
+    def start_tile_index(self, index: int):
+        self.imaging_specs['start_tile_index'] = index
+
+    @property
+    def end_tile_index(self):
+        """If specified, the tile index from which to stop collecting z stacks,
+        i.e: the final stack to be collected. (See details on
+        :meth:`start_tile_index` for more details on tile indexing.)
+        """
+        return self.imaging_specs.get('end_tile_index', None)
+
+    @end_tile_index.setter
+    def end_tile_index(self, index):
+        self.imaging_specs['end_tile_index'] = index
         
     @property
     def stage_backlash_reset_dist_um(self):

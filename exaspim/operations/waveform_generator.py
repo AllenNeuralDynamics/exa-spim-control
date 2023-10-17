@@ -77,7 +77,7 @@ def generate_waveforms(cfg, plot: bool = False, channels: list[int] = None, live
         # Generate laser TTL signal
         voltages_t[ch][n2c_index[str(ch)],  # FIXME: remove n2c or move it into the config.
         int(etl_buffer_samples / 2.0) + camera_delay_samples:int(
-            etl_buffer_samples / 2.0) + camera_exposure_samples + dwell_time_samples + camera_delay_samples] = 10.0
+            etl_buffer_samples / 2.0) + camera_exposure_samples + dwell_time_samples + camera_delay_samples] = 5.0
 
         # Generate stage TTL signal
         if ch == channels_list[-1]:
