@@ -1,6 +1,6 @@
 [imaging_specs]
-local_storage_directory = "D:\\"
-external_storage_directory =  "D:\\"   # "Y:\\"
+local_storage_directory = "."#"D:\\"
+external_storage_directory =  "."#"D:\\"   # "Y:\\"
 subject_id = "sim_test"
 tile_prefix = "tile"
 tile_overlap_x_percent = 15

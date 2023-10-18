@@ -22,6 +22,7 @@ class ExaspimConfig(SpimConfig):
         self.camera_specs = self.cfg['camera_specs']
 
         # Keyword arguments for instantiating objects.
+        self.joystick_kwds = self.cfg['joystick_kwds']
         self.sample_pose_kwds = self.cfg['sample_pose_kwds']
         self.tiger_obj_kwds = self.cfg['tiger_controller_driver_kwds']
         # Other obj kwds are generated dynamically.
@@ -57,6 +58,14 @@ class ExaspimConfig(SpimConfig):
 
     def get_etl_buffer_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['buffer_time_s']
+
+    # Channel Specs
+    def get_channel_ao_voltage(self, wl):
+        return self.channel_specs[wl]['ao_voltage']
+
+    def set_channel_ao_voltage(self, wl, value):
+
+        self.channel_specs[wl]['ao_voltage'] = value
 
     # Waveform Specs
     @property
@@ -109,16 +118,28 @@ class ExaspimConfig(SpimConfig):
         """Anatomical orientation along x"""
         return self.experiment_specs['x_anatomical_direction']
 
+    @x_anatomical_direction.setter
+    def x_anatomical_direction(self, direction):
+        """Anatomical orientation along x"""
+        self.experiment_specs['x_anatomical_direction'] = direction
     @property
     def y_anatomical_direction(self):
         """Anatomical orientation along y"""
         return self.experiment_specs['y_anatomical_direction']
 
+    @y_anatomical_direction.setter
+    def y_anatomical_direction(self, direction):
+        """Anatomical orientation along x"""
+        self.experiment_specs['y_anatomical_direction'] = direction
     @property
     def z_anatomical_direction(self):
         """Anatomical orientation along z"""
         return self.experiment_specs['z_anatomical_direction']
 
+    @z_anatomical_direction.setter
+    def z_anatomical_direction(self, direction):
+        """Anatomical orientation along x"""
+        self.experiment_specs['z_anatomical_direction'] = direction
     # Stage Specs
     @property
     def z_step_size_um(self):
@@ -291,7 +312,7 @@ class ExaspimConfig(SpimConfig):
         try:
             super().sanity_check()
         except AssertionError as e:
-            error_msgs.append(e)
+            error_msgs.append(str(e))
         # Proceed through ExaSPIM-specific checks:
         # Check that slit width >0 but less than the camera's number of rows.
         if self.slit_width <= 0 or self.slit_width > self.sensor_row_count:
