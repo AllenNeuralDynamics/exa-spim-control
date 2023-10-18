@@ -2,7 +2,7 @@ import numpy as np
 from multiprocessing import Process, Value, Event
 from multiprocessing.shared_memory import SharedMemory
 from pathlib import Path
-
+import tifffile
 
 class MIPProcessor(Process):
     """Class for assembling 3 MIP images from raw images off the camera."""
@@ -29,6 +29,8 @@ class MIPProcessor(Process):
         self.mip_xy = np.zeros((vol_x_voxels, vol_y_voxels))  # dtype?
         self.mip_xz = np.zeros((vol_x_voxels, vol_z_voxels))
         self.mip_yz = np.zeros((vol_y_voxels, vol_z_voxels))
+        self.x_px = img_size_x_pixels
+        self.y_px = img_size_y_pixels
         img_shape = (img_size_x_pixels, img_size_y_pixels)
         # Pre-compute amount of shared memory to allocate (in bytes).
         self.shm = SharedMemory(shm_name)
@@ -37,21 +39,29 @@ class MIPProcessor(Process):
         # These attributes are shared across processes.
         self.curr_img_centroid_x = Value('d', 0)
         self.curr_img_centroid_y = Value('d', 0)
+        self.curr_img_centroid_z = Value('d', 0)
+
+        self.file_dest = file_dest
 
     def run(self):
         # Setup connect to shared memory.
         while self.more_images.is_set():
             self.is_busy.set()
-            # Get the position where this image was taken.
-            # Apply MIP at the specified location in each image.
-            # MIP XY
-            #self.np.max(self.mip_xy[subset??], self.latest_img)
-            # MIP YZ
-            # First mip image into a line. Then into the mosaic.
-            # MIP ZX
-            # First mip image into a line. Then into the mosaic.
-            # Flag that we are not busy.
-            # exit if no more images.
+
+            self.mip_xy[self.curr_img_centroid_x:self.curr_img_centroid_x+self.x_px,
+                        self.curr_img_centroid_y:self.curr_img_centroid_y+self.y_px] = \
+                np.maximum(self.mip_xy[self.curr_img_centroid_x:self.curr_img_centroid_x+self.x_px,
+                        self.curr_img_centroid_y:self.curr_img_centroid_y+self.y_px], self.latest_img)
+
+            self.mip_yz[self.curr_img_centroid_z, :] = np.max(self.latest_img, axis = 1)
+
+            self.mip_xz[self.curr_img_centroid_z, :] = np.max(self.latest_img, axis=0)
+
             self.is_busy.clear()
             self.shm.close()
+
+        tifffile.imwrite(self.file_dest/Path("mip_xy.tiff"), self.mip_xy)
+        tifffile.imwrite(self.file_dest / Path("mip_yz.tiff"), self.mip_yz)
+        tifffile.imwrite(self.file_dest / Path("mip_xz.tiff"), self.mip_xz)
+
     # Done MIPping! Cleanup. Process exits.

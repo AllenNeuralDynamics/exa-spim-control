@@ -381,6 +381,7 @@ class Exaspim(Spim):
         # Create stacks of tiles along the z axis per channel.
         # Transfer stacks as they arrive to their final destination.
         try:
+            for processes in self.mip_processes.values(): processes.more_images.set()
             for x in tqdm(range(xtiles), desc="XY Tiling Progress"):
                 self.sample_pose.move_absolute(
                     x=round(self.stage_x_pos_um * STEPS_PER_UM), wait=True)
@@ -450,6 +451,7 @@ class Exaspim(Spim):
             self.log.exception("Error raised from the main acquisition loop.")
             raise
         finally:
+            for processes in self.mip_processes: processes.more_images.clear()
             self.sample_pose.move_absolute(x=0, y=0, wait=True)
             self.ni.close()
 
@@ -569,6 +571,11 @@ class Exaspim(Spim):
                     # TODO: make sure this actually deep copies the array.
                     self.mip_images[ch_index] = \
                         self.img_buffers[ch_index].write_buf[chunk_index]
+                    px_per_um_x = self.cfg.row_count_px/self.cfg.tile_size_x_um
+                    px_per_um_y = self.cfg.column_count_px/self.cfg.tile_size_y_um
+                    self.mip_processes[ch].curr_img_centroid_x.value = round(self.stage_x_pos_um*px_per_um_x)
+                    self.mip_processes[ch].curr_img_centroid_y.value = round(self.stage_y_pos_um * px_per_um_y)
+                    self.mip_processes[ch].curr_img_centroid_z.value = self.stage_z_pos_um/self.cfg.z_step_size_um
                     self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
                 # offer it to a live display upon request.
@@ -702,7 +709,6 @@ class Exaspim(Spim):
 
         self.overview_set.clear()
 
-        print(reshaped)
         return [reshaped], xtiles, ytiles
 
     def mip_stack(self, buffer, frame_count):
