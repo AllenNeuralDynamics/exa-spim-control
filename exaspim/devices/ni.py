@@ -22,6 +22,9 @@ class NI:
         """
         self.log = logging.getLogger(__name__ + "." + self.__class__.__name__)
         self.dev_name = dev_name
+        self.dev = nidaqmx.system.device.Device(self.dev_name)
+        self.log.warning('Resetting NIDAQ')
+        self.dev.reset_device()
         self.samples_per_sec = samples_per_sec
         self.livestream_frequency_hz = livestream_frequency_hz
         self.period_time_s = period_time_s
