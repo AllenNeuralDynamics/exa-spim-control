@@ -287,12 +287,12 @@ class Exaspim(Spim):
                                                       volume_x_um, volume_y_um,
                                                       volume_z_um)
 
-        # Compute size of total image volue in voxels for MIP construction.
-        volume_x_voxels, volume_y_voxels, volume_z_voxels = \
-            self.get_image_extents_voxels(tile_overlap_x_percent,
-                                          tile_overlap_y_percent,
-                                          z_step_size_um, volume_x_um,
-                                          volume_y_um, volume_z_um)
+        # # Compute size of total image volue in voxels for MIP construction.
+        # volume_x_voxels, volume_y_voxels, volume_z_voxels = \
+        #     self.get_image_extents_voxels(tile_overlap_x_percent,
+        #                                   tile_overlap_y_percent,
+        #                                   z_step_size_um, volume_x_um,
+        #                                   volume_y_um, volume_z_um)
         self.x_y_tiles = xtiles*ytiles
         start_tile_index = 0 if start_tile_index is None else start_tile_index
         end_tile_index = xtiles * ytiles - 1 \
@@ -348,24 +348,6 @@ class Exaspim(Spim):
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
         self._setup_waveform_hardware(channels)
-        # Setup MIP process if specified to do so.
-        if do_mip:
-            img_shape = (self.cfg.sensor_row_count, self.cfg.sensor_column_count)
-            img_bytes = int(np.prod(img_shape, dtype=np.int64) * np.dtype(self.cfg.image_dtype).itemsize)
-            for ch in channels:
-                # Allocate shared memory location for latest image for mip process.
-                self.mip_images_shm[ch] = SharedMemory(create=True, size=img_bytes)
-                self.mip_images[ch] = np.zeros(img_shape, dtype=self.cfg.image_dtype,
-                                               buf=self.mip_images_shm[ch].buf)
-                # Create the process.
-                self.mip_processes[ch] = MIPProcessor(volume_x_voxels, volume_y_voxels,
-                                                      volume_z_voxels,
-                                                      self.cfg.sensor_column_count,
-                                                      self.cfg.sensor_row_count,
-                                                      self.cfg.image_dtype,
-                                                      self.mip_images_shm[ch].name,
-                                                      self.deriv_storage_dir)
-                self.mip_processes[ch].run()
         # Move sample to preset starting position if specified.
         # TODO: pass this in as a parameter.
         if self.start_pos is not None:
@@ -415,7 +397,7 @@ class Exaspim(Spim):
                         output_filenames = \
                             self._collect_zstacks(channels, ztiles, z_step_size_um,
                                                   chunk_size, local_storage_dir,
-                                                  stack_prefix)
+                                                  stack_prefix, x, y)
                         # Start transferring zstack file to its destination.
                         # Note: Image transfer should be faster than image capture,
                         #   but we still wait for prior processes to finish.
@@ -471,7 +453,9 @@ class Exaspim(Spim):
     def _collect_zstacks(self, channels: list[int], frame_count: int,
                          z_step_size_um: float, chunk_size: int,
                          local_storage_dir: Path,
-                         stack_prefix: str):
+                         stack_prefix: str,
+                         x_tile_num,
+                         y_tile_num):
         """Collect tile stack for every specified channel and write them to
         disk compressed through ImarisWriter.
 
@@ -496,6 +480,8 @@ class Exaspim(Spim):
         :param local_storage_dir: the location to write the zstacks to.
         :param stack_prefix: the filename prefix. ('_<channel>.ims' will be
             appended to it.)
+        :param x_tile_num: current tile number in x dimension
+        :param y_tile_num: current tile number in y dimension
 
         :return: dict, keyed by channel name, of the filenames written to disk.
         """
@@ -536,6 +522,22 @@ class Exaspim(Spim):
                                 stack_file_names[ch], str(ch),
                                 self.cfg.channel_specs[str(ch)]['hex_color'])
                 self.stack_writer_workers[ch].start()
+
+            # Setup MIP process if specified to do so.
+            if do_mip:
+                img_shape = (self.cfg.sensor_row_count, self.cfg.sensor_column_count)
+                img_bytes = int(np.prod(img_shape, dtype=np.int64) * np.dtype(self.cfg.image_dtype).itemsize)
+                for ch in channels:
+                    # Mip process will use img_buffers.write_buf to access latest image
+                    # Create the process.
+                    self.mip_processes[ch] = MIPProcessor(x_tile_num, y_tile_num, ztiles,
+                                                          self.cfg.sensor_column_count,
+                                                          self.cfg.sensor_row_count,
+                                                          self.cfg.image_dtype,
+                                                          self.img_buffers[ch_index].write_buf.name,
+                                                          self.deriv_storage_dir,
+                                                          int(ch))
+                    self.mip_processes[ch].run()
         chunk_count = ceil(frame_count / chunk_size)
         last_frame_index = frame_count - 1
         remainder = frame_count % chunk_size
@@ -568,14 +570,8 @@ class Exaspim(Spim):
                     # image. (Should never block, but safeguard it anyways.)
                     while not any([mp.is_busy.is_set() for mp in self.mip_processes.values()]):
                         pass
-                    # TODO: make sure this actually deep copies the array.
-                    self.mip_images[ch_index] = \
-                        self.img_buffers[ch_index].write_buf[chunk_index]
-                    px_per_um_x = self.cfg.row_count_px/self.cfg.tile_size_x_um
-                    px_per_um_y = self.cfg.column_count_px/self.cfg.tile_size_y_um
-                    self.mip_processes[ch].curr_img_centroid_x.value = round(self.stage_x_pos_um*px_per_um_x)
-                    self.mip_processes[ch].curr_img_centroid_y.value = round(self.stage_y_pos_um * px_per_um_y)
-                    self.mip_processes[ch].curr_img_centroid_z.value = self.stage_z_pos_um/self.cfg.z_step_size_um
+                    self.mip_processes[ch].curr_tile_z.value = stack_index
+                    self.mip_processes[ch].new_image.set()
                     self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
                 # offer it to a live display upon request.
