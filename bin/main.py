@@ -56,7 +56,7 @@ def main():
         if args.simulated:
             args.config = "./sim_config.toml"
         else:
-            args.config = "./config.toml"
+            args.config = r"C:\Users\svc_aind_imaging\Documents\exaspim_files\config.toml"
 
     # Setup logging.
     # Create log handlers to dispatch:
