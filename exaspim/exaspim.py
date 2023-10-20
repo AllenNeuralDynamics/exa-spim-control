@@ -503,15 +503,19 @@ class Exaspim(Spim):
             # Setup MIP process if specified to do so.
             if do_mip:
                 img_shape = (self.cfg.sensor_row_count, self.cfg.sensor_column_count)
+                img_bytes = int(np.prod(img_shape, dtype=np.int64) * np.dtype(self.cfg.image_dtype).itemsize)
                 for ch in channels:
-
+                    # Allocate shared memory location for latest image for mip process.
+                    self.mip_images_shm[ch] = SharedMemory(create=True, size=img_bytes)
+                    self.mip_images[ch] = np.zeros(img_shape, dtype=self.cfg.image_dtype,
+                                                   buf=self.mip_images_shm[ch].buf)
                     # Mip process will use img_buffers.write_buf to access latest image
                     # Create the process.
-                    self.mip_processes[ch] = MIPProcessor(mem_shape, x_tile_num, y_tile_num, frame_count,
+                    self.mip_processes[ch] = MIPProcessor(x_tile_num, y_tile_num, frame_count,
                                                           self.cfg.sensor_row_count,
                                                           self.cfg.sensor_column_count,
                                                           self.cfg.image_dtype,
-                                                          self.img_buffers[ch].write_buf_mem_name,
+                                                          self.mip_images_shm[ch].name,
                                                           self.deriv_storage_dir,
                                                           int(ch))
                     self.mip_processes[ch].more_images.set()
@@ -550,7 +554,9 @@ class Exaspim(Spim):
                     # image. (Should never block, but safeguard it anyways.)
                     while any([mp.is_busy.is_set() for mp in self.mip_processes.values()]):
                         pass
-                    self.mip_processes[ch_index].chunk_index.value = chunk_index
+                    # TODO: make sure this actually deep copies the array.
+                    self.mip_images[ch_index] = \
+                        self.img_buffers[ch_index].write_buf[chunk_index]
                     self.mip_processes[ch_index].new_image.set()
                     self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to
@@ -588,9 +594,6 @@ class Exaspim(Spim):
                                 self.stack_writer_workers[ch_index].shm_name = \
                                     self.img_buffers[ch_index].read_buf_mem_name
                                 self.stack_writer_workers[ch_index].done_reading.clear()
-                            if do_mip:
-                                self.mip_processes[ch_index].shm_name = \
-                                    self.img_buffers[ch_index].write_buf_mem_name
             if self.overview_set.is_set():
                 # Read from read buff because buffer is toggled before calling function
                 self.mip_stack(self.img_buffers[channels[0]].read_buf, frame_count)
@@ -601,7 +604,8 @@ class Exaspim(Spim):
             self.log.exception("Error raised from the stack acquisition loop.")
             raise
         finally:
-            for processes in self.mip_processes.values(): processes.more_images.clear()
+            for processes in self.mip_processes.values():
+                processes.more_images.clear()
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop(wait=True)
             self.cam.stop()

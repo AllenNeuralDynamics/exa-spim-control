@@ -3,17 +3,16 @@ from multiprocessing import Process, Value, Event
 from multiprocessing.shared_memory import SharedMemory
 from pathlib import Path
 import tifffile
-from time import sleep
+
 
 class MIPProcessor(Process):
     """Class for assembling 3 MIP images from raw images off the camera."""
 
-    def __init__(self, shape, x_tile_num: int, y_tile_num: int, vol_z_voxels: int,
+    def __init__(self, x_tile_num: int, y_tile_num: int, vol_z_voxels: int,
                  img_size_x_pixels: int, img_size_y_pixels: int,
                  img_pixel_dype: np.dtype, shm_name: str, file_dest: Path,
                  wavelength: int):
         """Init.
-        :param shape: shape of shared memory buffer
         :param x_tile_num: current tile number in x dimension
         :param y_tile_num: current tile number in y dimension
         :param vol_z_voxels: size of the whole dataset z dimension in voxels
@@ -40,31 +39,26 @@ class MIPProcessor(Process):
         self.mip_yz = np.zeros((img_size_y_pixels, vol_z_voxels))
 
         # Pre-compute amount of shared memory to allocate (in bytes).
-        self.shm = SharedMemory(name= shm_name, create=False)
-        self.latest_imgs = np.ndarray(shape, img_pixel_dype,
+        self.shm = SharedMemory(name=shm_name, create=False)
+        self.latest_img = np.ndarray((img_size_x_pixels, img_size_y_pixels), img_pixel_dype,
                                      buffer=self.shm.buf)
-        # These attributes are shared across processes.
-        self.chunk_index = Value('i', 0)
-
         self.file_dest = file_dest
         self.wavelength = wavelength
 
     def run(self):
-        # Setup connect to shared memory.
+        frame_index = 0
+        # Build mips. Assume frames increment sequentially in z.
         while self.more_images.is_set():
             if self.new_image.is_set():
                 print('mip buf', self.shm.buf)
-                print('latest image', self.latest_imgs[self.chunk_index.value])
+                print('latest image', self.latest_img)
                 self.is_busy.set()
-                self.mip_xy = np.maximum(self.mip_xy, self.latest_imgs[self.chunk_index.value])
-                self.mip_yz[:, self.chunk_index.value] = np.max(self.latest_imgs[self.chunk_index.value], axis=0)
-                self.mip_xz[self.chunk_index.value, :] = np.max(self.latest_imgs[self.chunk_index.value], axis=1)
-
+                self.mip_xy = np.maximum(self.mip_xy, self.latest_img)
+                self.mip_yz[:, frame_index] = np.max(self.latest_img, axis=0)
+                self.mip_xz[frame_index, :] = np.max(self.latest_img, axis=1)
                 self.is_busy.clear()
-
-
+                frame_index += 1
             self.new_image.clear()
-        sleep(.1)
 
         tifffile.imwrite(self.file_dest/Path(f"mip_xy_tile_x_{self.x_tile_num:04}_y_{self.y_tile_num:04}_z_0000_ch_{self.wavelength}.tiff"), self.mip_xy)
         tifffile.imwrite(self.file_dest / Path(f"mip_yz_tile_x_{self.x_tile_num:04}_y_{self.y_tile_num:04}_z_0000_ch_{self.wavelength}.tiff"), self.mip_yz)
