@@ -374,7 +374,7 @@ class Exaspim(Spim):
                         output_filenames = \
                             self._collect_zstacks(channels, ztiles, z_step_size_um,
                                                   chunk_size, local_storage_dir,
-                                                  stack_prefix, x, y)
+                                                  stack_prefix, x, y, do_mip)
                         # Start transferring zstack file to its destination.
                         # Note: Image transfer should be faster than image capture,
                         #   but we still wait for prior processes to finish.
@@ -507,8 +507,8 @@ class Exaspim(Spim):
                 for ch in channels:
                     # Allocate shared memory location for latest image for mip process.
                     self.mip_images_shm[ch] = SharedMemory(create=True, size=img_bytes)
-                    self.mip_images[ch] = np.zeros(img_shape, dtype=self.cfg.image_dtype,
-                                                   buf=self.mip_images_shm[ch].buf)
+                    self.mip_images[ch] = np.ndarray(img_shape, dtype=self.cfg.image_dtype,
+                                                   buffer=self.mip_images_shm[ch].buf)
                     # Mip process will use img_buffers.write_buf to access latest image
                     # Create the process.
                     self.mip_processes[ch] = MIPProcessor(x_tile_num, y_tile_num, frame_count,
@@ -555,8 +555,8 @@ class Exaspim(Spim):
                     while any([mp.is_busy.is_set() for mp in self.mip_processes.values()]):
                         pass
                     # TODO: make sure this actually deep copies the array.
-                    self.mip_images[ch_index] = \
-                        self.img_buffers[ch_index].write_buf[chunk_index]
+
+                    self.mip_images[ch_index][:,:] = self.img_buffers[ch_index].write_buf[chunk_index][:,:]
                     self.mip_processes[ch_index].new_image.set()
                     self._check_camera_acquisition_state()
                 # Save the index of the most-recently captured frame to

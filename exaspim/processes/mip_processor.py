@@ -1,16 +1,16 @@
 import numpy as np
-from multiprocessing import Process, Value, Event
+from multiprocessing import Process, Value, Event, Array
 from multiprocessing.shared_memory import SharedMemory
 from pathlib import Path
 import tifffile
-
+import array
 
 class MIPProcessor(Process):
     """Class for assembling 3 MIP images from raw images off the camera."""
 
     def __init__(self, x_tile_num: int, y_tile_num: int, vol_z_voxels: int,
                  img_size_x_pixels: int, img_size_y_pixels: int,
-                 img_pixel_dype: np.dtype, shm_name: str, file_dest: Path,
+                 img_pixel_dtype: np.dtype, shm_name: str, file_dest: Path,
                  wavelength: int):
         """Init.
         :param x_tile_num: current tile number in x dimension
@@ -18,7 +18,7 @@ class MIPProcessor(Process):
         :param vol_z_voxels: size of the whole dataset z dimension in voxels
         :param img_size_x_pixels: size of a single image x dimension in pixels
         :param img_size_y_pixels:  size of a single image y dimension in pixels
-        :param img_pixel_dype: image pixel data type
+        :param img_pixel_dtype: image pixel data type
         :param shm_name: name of shared memory that we will interpret as a
             numpy array where the latest image is being written.
         :param file_dest: destination of the 3 MIP files.
@@ -33,26 +33,28 @@ class MIPProcessor(Process):
         self.more_images.clear()
         self.x_tile_num = x_tile_num
         self.y_tile_num = y_tile_num
+        self.shm_shape = (img_size_x_pixels, img_size_y_pixels)
+        self.dtype = img_pixel_dtype
         # Create XY, YZ, ZX placeholder images.
         self.mip_xy = np.zeros((img_size_x_pixels, img_size_y_pixels))  # dtype?
         self.mip_xz = np.zeros((vol_z_voxels, img_size_x_pixels))
         self.mip_yz = np.zeros((img_size_y_pixels, vol_z_voxels))
 
-        # Pre-compute amount of shared memory to allocate (in bytes).
-        self.shm = SharedMemory(name=shm_name, create=False)
-        self.latest_img = np.ndarray((img_size_x_pixels, img_size_y_pixels), img_pixel_dype,
-                                     buffer=self.shm.buf)
+        # Create attributes to open shared memory in run function
+        self.shm = SharedMemory(shm_name, create=False)
+        self.latest_img = np.ndarray(self.shm_shape, self.dtype, buffer=self.shm.buf)
+
         self.file_dest = file_dest
         self.wavelength = wavelength
 
     def run(self):
         frame_index = 0
         # Build mips. Assume frames increment sequentially in z.
+
         while self.more_images.is_set():
             if self.new_image.is_set():
-                print('mip buf', self.shm.buf)
-                print('latest image', self.latest_img)
                 self.is_busy.set()
+                self.latest_img = np.ndarray(self.shm_shape, self.dtype, buffer=self.shm.buf)
                 self.mip_xy = np.maximum(self.mip_xy, self.latest_img)
                 self.mip_yz[:, frame_index] = np.max(self.latest_img, axis=0)
                 self.mip_xz[frame_index, :] = np.max(self.latest_img, axis=1)
