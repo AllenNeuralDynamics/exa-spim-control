@@ -170,7 +170,8 @@ class Exaspim(Spim):
 
     def _setup_waveform_hardware(self, wavelengths: list[int], live: bool = False):
 
-        if not self.livestream_enabled.is_set():  # Only configures daq on the initiation of livestream
+        # Only configures daq on the initiation of livestream
+        if not self.livestream_enabled.is_set() and self.ni.live != live:
             self.log.info("Configuring NIDAQ")
             self.ni.configure(live=live)
 
@@ -264,13 +265,6 @@ class Exaspim(Spim):
                                                       z_step_size_um,
                                                       volume_x_um, volume_y_um,
                                                       volume_z_um)
-
-        # # Compute size of total image volue in voxels for MIP construction.
-        # volume_x_voxels, volume_y_voxels, volume_z_voxels = \
-        #     self.get_image_extents_voxels(tile_overlap_x_percent,
-        #                                   tile_overlap_y_percent,
-        #                                   z_step_size_um, volume_x_um,
-        #                                   volume_y_um, volume_z_um)
         self.x_y_tiles = xtiles*ytiles
         start_tile_index = 0 if start_tile_index is None else start_tile_index
         end_tile_index = xtiles * ytiles - 1 \
@@ -412,8 +406,6 @@ class Exaspim(Spim):
         finally:
             self.sample_pose.move_absolute(x=0, y=0, wait=True)
             self.ni.close()
-
-
 
         # Write MIPs to files.
         # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
@@ -587,7 +579,7 @@ class Exaspim(Spim):
                     # Clear previous chunk index, so we don't provide a
                     # picture that has not yet been written to this chunk.
                     self.prev_frame_chunk_index = None
-                    with (self.chunk_lock):
+                    with self.chunk_lock:
                         for ch_index in channels:
                             self.img_buffers[ch_index].toggle_buffers()
                             if local_storage_dir is not None:
@@ -759,12 +751,14 @@ class Exaspim(Spim):
             sleep(self.cfg.get_channel_cycle_time(488)) # Hack
             self.ni.stop()
 
-        while True:
-            if self.livestream_enabled.is_set() or self.acquiring_images and self.active_lasers is not None:
+        # while True:
+        #     if self.livestream_enabled.is_set() or self.acquiring_images and self.active_lasers is not None:
+        while self.livestream_enabled.is_set() or self.acquiring_images:
+            if self.active_lasers is not None:
                 channel_id = (channel_id + 1) % len(self.active_lasers) if len(self.active_lasers) != 1 else 0
                 yield self.get_latest_image(self.active_lasers[channel_id]), self.active_lasers[channel_id]
-            sleep((1 / self.cfg.daq_obj_kwds['livestream_frequency_hz']))
-            yield
+            #sleep((1 / self.cfg.daq_obj_kwds['livestream_frequency_hz']))
+
 
 
     def stop_livestream(self):
@@ -775,8 +769,6 @@ class Exaspim(Spim):
         self.livestream_enabled.clear()
         self.cam.stop()
         self.ni.stop()
-        sleep(1)  # This is a hack.
-        self.ni.close()
         self.active_lasers = None
         self.scout_mode = False
 
@@ -806,20 +798,24 @@ class Exaspim(Spim):
         if img_buffer and self.prev_frame_chunk_index is not None and self.acquiring_images:
             # Only access buffer if it isn't being toggled.
             with self.chunk_lock:
-                self.log.info('Calling downsample from get_latest_image')
-                return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index])
+                self.log.debug('Calling downsample from get_latest_image')
+                try:
+                    return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index])
+                except:
+                    return None
 
         # Return a dummy image if none are available.
         if not img_buffer or self.prev_frame_chunk_index is None or not self.acquiring_images:
-            if self.livestream_enabled.is_set():
-                # return self.downsampler.compute(np.clip(self.cam.grab_frame()-self.bkg_image+100, 100, 2**16-1)-100)
-                return self.downsampler.compute(self.cam.grab_frame())
-            elif self.simulated:
-                # Display "white noise" if no image is available.
-                return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
-                                                                                self.cfg.sensor_column_count),
-                                                                  dtype=self.cfg.image_dtype))
-            else:
+            try:
+                if self.livestream_enabled.is_set():
+                    # return self.downsampler.compute(np.clip(self.cam.grab_frame()-self.bkg_image+100, 100, 2**16-1)-100)
+                    return self.downsampler.compute(self.cam.grab_frame())
+                elif self.simulated:
+                    # Display "white noise" if no image is available.
+                    return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
+                                                                                    self.cfg.sensor_column_count),
+                                                                      dtype=self.cfg.image_dtype))
+            except:
                 return None
 
     def get_mem_consumption(self):
@@ -861,9 +857,12 @@ class Exaspim(Spim):
                                          self.stage_z_pos_um * 0.001]}
                     ],
                     'channel': {'channel_name': str(laser),
-                                'laser_wavelength': str(laser),
-                                'laser_power': '1000.0',
-                                'filter_wheel_index': 0
+                                'light_source_name': str(laser),
+                                'excitation_wavelength': str(laser),
+                                'excitation_power': '1000.0',
+                                'filter_wheel_index': 0,
+                                'filter_names': [],
+                                'detector_name': '',
                                 },
                     'channel_name': f'{laser}',
                     'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,

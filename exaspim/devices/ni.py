@@ -22,6 +22,9 @@ class NI:
         """
         self.log = logging.getLogger(__name__ + "." + self.__class__.__name__)
         self.dev_name = dev_name
+        self.dev = nidaqmx.system.device.Device(self.dev_name)
+        self.log.warning('Resetting NIDAQ')
+        self.dev.reset_device()
         self.samples_per_sec = samples_per_sec
         self.livestream_frequency_hz = livestream_frequency_hz
         self.period_time_s = period_time_s
@@ -30,6 +33,8 @@ class NI:
         self.daq_samples = round(self.samples_per_sec * self.period_time_s)
         self.co_task = None
         self.ao_task = None
+
+        self.live = False
 
     def configure(self, live: bool = False):
         """Configure the NI card to play either `frame_count` frames or
@@ -41,8 +46,10 @@ class NI:
             must be left unspecified in this case. Otherwise, play the
             waveforms for the specified `frame_count`.
         """
-
+        self.live = live
         frequency = self.samples_per_sec/self.daq_samples if not live else self.livestream_frequency_hz
+        self.close()    # If tasks exist then close them
+        self.dev.reset_device()
 
         self.co_task = nidaqmx.Task('counter_output_task')
         co_chan = self.co_task.co_channels.add_co_pulse_chan_freq(
