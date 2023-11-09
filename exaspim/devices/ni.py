@@ -33,8 +33,7 @@ class NI:
         self.daq_samples = round(self.samples_per_sec * self.period_time_s)
         self.co_task = None
         self.ao_task = None
-
-        self.live = False
+        self.live = None
 
     def configure(self, live: bool = False):
         """Configure the NI card to play either `frame_count` frames or
@@ -79,6 +78,9 @@ class NI:
 #			trigger_source=f'/{self.dev_name}/PFI1',
             trigger_source=f'/{self.dev_name}/PFI0',
             trigger_edge=Slope.RISING)
+
+        self.ao_task.out_stream.output_buf_size = self.daq_samples  # Sets buffer to length of voltages
+        self.ao_task.control(TaskMode.TASK_COMMIT)
 
     def assign_waveforms(self, voltages_t, scout_mode: bool = False):
 

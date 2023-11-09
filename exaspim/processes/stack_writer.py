@@ -161,7 +161,6 @@ class StackWriter(Process):
             while self.done_reading.is_set():
                 sleep(0.001)
             # Attach a reference to the data from shared memory.
-            print('stack writere shared memory', self.shm_name)
             shm = SharedMemory(self.shm_name, create=False, size=self.shm_nbytes)
             frames = np.ndarray(self.shm_shape, self.dtype, buffer=shm.buf)
             print(f"Ch{self.channel_name} writing chunk "

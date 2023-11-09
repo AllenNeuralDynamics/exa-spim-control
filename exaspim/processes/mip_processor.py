@@ -36,9 +36,9 @@ class MIPProcessor(Process):
         self.shm_shape = (img_size_x_pixels, img_size_y_pixels)
         self.dtype = img_pixel_dtype
         # Create XY, YZ, ZX placeholder images.
-        self.mip_xy = np.zeros((img_size_x_pixels, img_size_y_pixels))  # dtype?
-        self.mip_xz = np.zeros((vol_z_voxels, img_size_x_pixels))
-        self.mip_yz = np.zeros((img_size_y_pixels, vol_z_voxels))
+        self.mip_xy = np.zeros((img_size_x_pixels, img_size_y_pixels), dtype=self.dtype)  # dtype?
+        self.mip_xz = np.zeros((vol_z_voxels, img_size_x_pixels), dtype=self.dtype)
+        self.mip_yz = np.zeros((img_size_y_pixels, vol_z_voxels), dtype=self.dtype)
 
         # Create attributes to open shared memory in run function
         self.shm = SharedMemory(shm_name, create=False)
@@ -55,7 +55,7 @@ class MIPProcessor(Process):
             if self.new_image.is_set():
                 self.is_busy.set()
                 self.latest_img = np.ndarray(self.shm_shape, self.dtype, buffer=self.shm.buf)
-                self.mip_xy = np.maximum(self.mip_xy, self.latest_img)
+                self.mip_xy = np.maximum(self.mip_xy, self.latest_img).astype(np.uint16)
                 self.mip_yz[:, frame_index] = np.max(self.latest_img, axis=0)
                 self.mip_xz[frame_index, :] = np.max(self.latest_img, axis=1)
                 self.is_busy.clear()

@@ -80,9 +80,6 @@ class Exaspim(Spim):
         self.acquiring_images = False
         self.active_lasers = None
         self.scout_mode = False
-        # Overview variables
-        self.overview_set = Event()
-        self.overview_process = None
 
         # Internal arrays/iamges
         self.bkg_image = None  # background image
@@ -177,7 +174,7 @@ class Exaspim(Spim):
 
         self.active_lasers = wavelengths
         self.log.info("Generating waveforms.")
-        voltages_t = generate_waveforms(self.cfg, plot=True, channels=self.active_lasers, live=live)
+        voltages_t = generate_waveforms(self.cfg, plot=False, channels=self.active_lasers, live=live)
         self.log.info("Writing waveforms to hardware.")
         self.ni.assign_waveforms(voltages_t, self.scout_mode)
 
@@ -355,15 +352,14 @@ class Exaspim(Spim):
                         # TODO, should we do the arithmetic outside of the Camera class?
                         # TODO, should we transfer this small file or just write directly over the network?
                         tile_start = time()
-                        #if not self.overview_set.is_set():
-                            # Collect background image for this tile
-                            # self.background_image.set()
-                            # self.log.info("Starting background image.")
-                            # bkg_img = self.cam.collect_background(frame_average=10)
-                            # # Save background image TIFF file
-                            # tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img, tile=(256, 256))
-                            # self.log.info("Completed background image.")
-                            # self.background_image.clear()
+                        # Collect background image for this tile
+                        self.background_image.set()
+                        self.log.info("Starting background image.")
+                        bkg_img = self.cam.collect_background(frame_average=10)
+                        # Save background image TIFF file
+                        tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img, tile=(256, 256))
+                        self.log.info("Completed background image.")
+                        self.background_image.clear()
                         # Collect the Z stacks for all channels.
                         output_filenames = \
                             self._collect_zstacks(channels, ztiles, z_step_size_um,
@@ -407,13 +403,6 @@ class Exaspim(Spim):
             self.sample_pose.move_absolute(x=0, y=0, wait=True)
             self.ni.close()
 
-        # Write MIPs to files.
-        # TODO: in the file_prefix, indicate if it is a XY, XZ, or YZ mip.
-        # for ch, mip_data in mips.items():
-        #    path = deriv_storage_dir/Path(f"{stack_prefix}_{ch}_mip.tiff")
-        #    self.log.debug(f"Writing MIP for {ch} channel to: {path}")
-        #    with TiffWriter(path, bigtiff=True) as tif:
-        #        tif.write(mip_data)
         acquisition_params = {'session_end_time': datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
                               'tags': ['schema']}
         self.log.info("acquisition parameters", extra=acquisition_params)
@@ -544,10 +533,9 @@ class Exaspim(Spim):
                     # the MIP processor can process it.
                     # First make sure that the mip process isn't using previous
                     # image. (Should never block, but safeguard it anyways.)
-                    while any([mp.is_busy.is_set() for mp in self.mip_processes.values()]):
+                    while any([mp.new_image.is_set() for mp in self.mip_processes.values()]):
                         pass
-                    # TODO: make sure this actually deep copies the array.
-
+                    # Only copies array into shared memory if brackets are there
                     self.mip_images[ch_index][:,:] = self.img_buffers[ch_index].write_buf[chunk_index][:,:]
                     self.mip_processes[ch_index].new_image.set()
                     self._check_camera_acquisition_state()
@@ -586,9 +574,6 @@ class Exaspim(Spim):
                                 self.stack_writer_workers[ch_index].shm_name = \
                                     self.img_buffers[ch_index].read_buf_mem_name
                                 self.stack_writer_workers[ch_index].done_reading.clear()
-            if self.overview_set.is_set():
-                # Read from read buff because buffer is toggled before calling function
-                self.mip_stack(self.img_buffers[channels[0]].read_buf, frame_count)
             capture_successful = True
             self.log.debug(f"Stack imaging time: "
                            f"{(perf_counter() - start_time) / 3600.:.3f} hours.")
@@ -598,6 +583,7 @@ class Exaspim(Spim):
         finally:
             for processes in self.mip_processes.values():
                 processes.more_images.clear()
+                processes.join()
             self.log.debug("Closing devices and processes for this stack.")
             self.ni.stop(wait=True)
             self.cam.stop()
@@ -627,80 +613,6 @@ class Exaspim(Spim):
             self.log.debug(f"Stack Capture ending memory usage: {self.get_mem_consumption():.3f}%")
 
         return stack_file_names
-
-    def overview_scan(self):
-
-        """Quick overview scan function """
-
-        xtiles, ytiles, self.ztiles = self.get_tile_counts(self.cfg.tile_overlap_x_percent,
-                                                           self.cfg.tile_overlap_y_percent,
-                                                           8,
-                                                           self.cfg.volume_x_um,
-                                                           self.cfg.volume_y_um,
-                                                           self.cfg.volume_z_um)
-
-        self.image_overview = None  # Clear previous image overview if any
-        self.image_overview = []  # Create empty array size of tiles
-        self.overview_set.set()
-
-        self.collect_volumetric_image(self.cfg.volume_x_um, self.cfg.volume_y_um,
-                                      self.cfg.volume_z_um,
-                                      self.cfg.imaging_specs['laser_wavelengths'],
-                                      self.cfg.tile_overlap_x_percent, self.cfg.tile_overlap_y_percent, 8,
-                                      local_storage_dir = None)
-
-        if self.overview_process != None:
-            self.overview_process.join()
-
-        self.overview_process = None
-        self.start_pos = None  # Reset start position
-
-
-
-
-        # Create empty array size of overview image
-        rows = self.image_overview[0].shape[0]
-        cols = self.image_overview[0].shape[1]
-        overlap_y = round((15 / 100) * rows)
-        overlap_x = round((15 / 100) * cols)
-
-        x_grid_step_px = \
-            ceil((1 - 15 / 100.0) * cols)
-        y_grid_step_px = \
-            ceil((1 - 15 / 100.0) * rows)
-        reshaped = np.zeros((ytiles * y_grid_step_px + overlap_y, xtiles * x_grid_step_px + overlap_x))
-        for x in range(0, xtiles):
-            for y in range(0, ytiles):
-                if x == 0:
-                    reshaped[y * y_grid_step_px:(y * y_grid_step_px) + rows, -(x * x_grid_step_px) - cols:] = \
-                        self.image_overview[0]
-                else:
-                    reshaped[y * y_grid_step_px:(y * y_grid_step_px) + rows,
-                    -(x * x_grid_step_px) - cols:-x * x_grid_step_px] = self.image_overview[0]
-                del self.image_overview[0]
-
-        tifffile.imwrite(fr'{self.cfg.local_storage_dir}\overview_img_{"_".join(map(str, self.cfg.imaging_specs["laser_wavelengths"]))}'
-                         fr'_{datetime.now().strftime("%Y-%m-%d_%H-%M-%S")}.tiff',
-                         reshaped)
-
-        self.overview_set.clear()
-
-        return [reshaped], xtiles, ytiles
-
-    def mip_stack(self, buffer, frame_count):
-
-        """Create a mip from a stack."""
-
-        downsampled = [None]*frame_count
-
-        for i in range(frame_count):
-            with self.chunk_lock:
-                self.log.info('Calling downsample from overview_worker')
-                downsampled[i] = self.downsampler.compute(buffer[i])[4]
-
-        mipstack = np.max(downsampled, axis=0)            # Max projection
-        self.image_overview.append(mipstack)
-
     def _all_stack_workers_idle(self):
         """Helper function. True if all StackWriters are idle."""
         return all([w.done_reading.is_set()
