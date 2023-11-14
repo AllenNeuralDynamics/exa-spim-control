@@ -27,9 +27,7 @@ class MIPProcessor(Process):
         super().__init__()
         self.more_images = Event()
         self.new_image = Event()
-        self.is_busy = Event()
         self.new_image.clear()
-        self.is_busy.clear()
         self.more_images.clear()
         self.x_tile_num = x_tile_num
         self.y_tile_num = y_tile_num
@@ -53,14 +51,12 @@ class MIPProcessor(Process):
 
         while self.more_images.is_set():
             if self.new_image.is_set():
-                self.is_busy.set()
                 self.latest_img = np.ndarray(self.shm_shape, self.dtype, buffer=self.shm.buf)
                 self.mip_xy = np.maximum(self.mip_xy, self.latest_img).astype(np.uint16)
                 self.mip_yz[:, frame_index] = np.max(self.latest_img, axis=0)
                 self.mip_xz[frame_index, :] = np.max(self.latest_img, axis=1)
-                self.is_busy.clear()
                 frame_index += 1
-            self.new_image.clear()
+                self.new_image.clear()
 
         tifffile.imwrite(self.file_dest/Path(f"mip_xy_tile_x_{self.x_tile_num:04}_y_{self.y_tile_num:04}_z_0000_ch_{self.wavelength}.tiff"), self.mip_xy)
         tifffile.imwrite(self.file_dest / Path(f"mip_yz_tile_x_{self.x_tile_num:04}_y_{self.y_tile_num:04}_z_0000_ch_{self.wavelength}.tiff"), self.mip_yz)

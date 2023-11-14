@@ -94,7 +94,7 @@ class Exaspim(Spim):
         # Grab a background image for livestreaming.
         # self._grab_background_image()
         self.chunk_lock = threading.Lock()
-
+        self.stage_lock = threading.Lock()
     def _setup_joystick(self):
         """Configure joystick based on value in config"""
 
@@ -669,7 +669,7 @@ class Exaspim(Spim):
             if self.active_lasers is not None:
                 channel_id = (channel_id + 1) % len(self.active_lasers) if len(self.active_lasers) != 1 else 0
                 yield self.get_latest_image(self.active_lasers[channel_id]), self.active_lasers[channel_id]
-            #sleep((1 / self.cfg.daq_obj_kwds['livestream_frequency_hz']))
+            yield#sleep((1 / self.cfg.daq_obj_kwds['livestream_frequency_hz']))
 
 
 
