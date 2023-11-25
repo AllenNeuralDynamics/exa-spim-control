@@ -165,16 +165,15 @@ class Exaspim(Spim):
             self.cam.get_mainboard_temperature.return_value = 23.15
             self.cam.get_sensor_temperature.return_value = 23.15
 
-    def _setup_waveform_hardware(self, wavelengths: list[int], live: bool = False):
+    def _setup_waveform_hardware(self, wavelength: int, live: bool = False):
 
         # Only configures daq on the initiation of livestream
         if not self.livestream_enabled.is_set() and self.ni.live != live:
             self.log.info("Configuring NIDAQ")
-            self.ni.configure(live=live)
+            self.ni.configure(live=live, channel=wavelength)
 
-        self.active_lasers = wavelengths
         self.log.info("Generating waveforms.")
-        voltages_t = generate_waveforms(self.cfg, plot=False, channels=self.active_lasers, live=live)
+        voltages_t = generate_waveforms(self.cfg, plot=False, channel=wavelength, live=live)
         self.log.info("Writing waveforms to hardware.")
         self.ni.assign_waveforms(voltages_t, self.scout_mode)
 
@@ -316,7 +315,6 @@ class Exaspim(Spim):
         self.frame_index = 0  # Reset image index.
         start_time = perf_counter()  # For logging elapsed time.
         # Setup containers
-        self._setup_waveform_hardware(channels)
         # Move sample to preset starting position if specified.
         # TODO: pass this in as a parameter.
         if self.start_pos is not None:
@@ -340,56 +338,61 @@ class Exaspim(Spim):
                 for y in range(ytiles):
                     self.sample_pose.move_absolute(
                         y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
-                    if start_tile_index <= self.curr_tile_index <= end_tile_index:
-                        self.log.info(f"tile: ({x}, {y}); stage_position: "
-                                      f"({self.stage_x_pos_um:.3f}[um], "
-                                      f"{self.stage_y_pos_um:.3f}[um])")
-                        stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
-                        # Log stack capture start state.
-                        self.log_stack_acquisition_params(self.curr_tile_index,
-                                                          stack_prefix,
-                                                          z_step_size_um)
-                        # TODO, should we do the arithmetic outside of the Camera class?
-                        # TODO, should we transfer this small file or just write directly over the network?
-                        tile_start = time()
-                        # Collect background image for this tile
-                        self.background_image.set()
-                        self.log.info("Starting background image.")
-                        bkg_img = self.cam.collect_background(frame_average=10)
-                        # Save background image TIFF file
-                        tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img, tile=(256, 256))
-                        self.log.info("Completed background image.")
-                        self.background_image.clear()
-                        # Collect the Z stacks for all channels.
-                        output_filenames = \
-                            self._collect_zstacks(channels, ztiles, z_step_size_um,
-                                                  chunk_size, local_storage_dir,
-                                                  stack_prefix, x, y, do_mip)
-                        # Start transferring zstack file to its destination.
-                        # Note: Image transfer should be faster than image capture,
-                        #   but we still wait for prior processes to finish.
-                        if self.stack_transfer_workers:
-                            self.log.info("Waiting for zstack transfer processes "
-                                          "to complete.")
-                            for channel in list(self.stack_transfer_workers.keys()):
-                                worker = self.stack_transfer_workers.pop(channel)
-                                worker.join()
-                        # Kick off Stack transfer processes per channel.
-                        # Bail if we don't need to transfer anything.
-                        if img_storage_dir:
-                            for channel, filename in output_filenames.items():
-                                self.log.info(f"Starting transfer process for {filename}.")
-                                self.stack_transfer_workers[channel] = \
-                                    FileTransfer(local_storage_dir / filename,
-                                                 img_storage_dir / filename,
-                                                 self.cfg.ftp, self.cfg.ftp_flags)
-                                self.stack_transfer_workers[channel].start()
-                        else:
-                            self.log.info("Skipping file transfer process. File "
-                                          "is already at its destination.")
-                        self.tile_time_s = time() - tile_start
+                    for ch in range(channels):
+                        binning = self.cfg.get_binning(ch)
+                        self._setup_waveform_hardware(ch)
+                        # MOVE ASI MOTOR
+                        if start_tile_index <= self.curr_tile_index <= end_tile_index:
+                            self.log.info(f"tile: ({x}, {y}); stage_position: "
+                                          f"({self.stage_x_pos_um:.3f}[um], "
+                                          f"{self.stage_y_pos_um:.3f}[um])")
+                            stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
+                            # Log stack capture start state.
+                            self.log_stack_acquisition_params(self.curr_tile_index,
+                                                              stack_prefix,
+                                                              z_step_size_um,
+                                                              binning)
+                            # TODO, should we do the arithmetic outside of the Camera class?
+                            # TODO, should we transfer this small file or just write directly over the network?
+                            tile_start = time()
+                            # Collect background image for this tile
+                            self.background_image.set()
+                            self.log.info("Starting background image.")
+                            bkg_img = self.cam.collect_background(frame_average=10)
+                            # Save background image TIFF file
+                            tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}_ch_{ch}.tiff")).absolute()), bkg_img, tile=(256, 256))
+                            self.log.info("Completed background image.")
+                            self.background_image.clear()
+                            # Collect the Z stacks for single channel.
+                            output_filenames = \
+                                self._collect_zstacks([ch], binning, ztiles, z_step_size_um,
+                                                      chunk_size, local_storage_dir,
+                                                      stack_prefix, x, y, do_mip)
+                            # Start transferring zstack file to its destination.
+                            # Note: Image transfer should be faster than image capture,
+                            #   but we still wait for prior processes to finish.
+                            if self.stack_transfer_workers:
+                                self.log.info("Waiting for zstack transfer processes "
+                                              "to complete.")
+                                for channel in list(self.stack_transfer_workers.keys()):
+                                    worker = self.stack_transfer_workers.pop(channel)
+                                    worker.join()
+                            # Kick off Stack transfer processes per channel.
+                            # Bail if we don't need to transfer anything.
+                            if img_storage_dir:
+                                for ch, filename in output_filenames.items():
+                                    self.log.info(f"Starting transfer process for {filename}.")
+                                    self.stack_transfer_workers[ch] = \
+                                        FileTransfer(local_storage_dir / filename,
+                                                     img_storage_dir / filename,
+                                                     self.cfg.ftp, self.cfg.ftp_flags)
+                                    self.stack_transfer_workers[ch].start()
+                            else:
+                                self.log.info("Skipping file transfer process. File "
+                                              "is already at its destination.")
+                            self.tile_time_s = time() - tile_start
+                    
                     self.curr_tile_index += 1
-
                     self.stage_y_pos_um = self.stage_y_pos_um - y_grid_step_um # TODO, this changes for reversing tiling
                 self.stage_x_pos_um = self.stage_x_pos_um + x_grid_step_um # TODO, this changes for reversing tiling
             self.acquiring_images = False
@@ -407,7 +410,7 @@ class Exaspim(Spim):
                               'tags': ['schema']}
         self.log.info("acquisition parameters", extra=acquisition_params)
 
-    def _collect_zstacks(self, channels: list[int], frame_count: int,
+    def _collect_zstacks(self, channels: list[int], binning: int, frame_count: int,
                          z_step_size_um: float, chunk_size: int,
                          local_storage_dir: Path,
                          stack_prefix: str,
@@ -429,8 +432,9 @@ class Exaspim(Spim):
 
         Note: Since a single image can be ~300[MB], a stack of frames can
         easily be tens of gigabytes.
-
-        :param channels: a list of channels
+        
+        :param channels: list of integer channels
+        :param binning: integer for binning
         :param frame_count: number of frames to collect into a stack.
         :param z_step_size_um: spacing between each step.
         :param chunk_size: the number of batch frames to send to
@@ -443,6 +447,14 @@ class Exaspim(Spim):
 
         :return: dict, keyed by channel name, of the filenames written to disk.
         """
+        # Adjust inputs for binning
+        z_step_size_um = round(z_step_size_um * binning)
+        frame_count = round(frame_count / binning)
+        sensor_row_count = round(self.cfg.sensor_row_count / binning)
+        sensor_column_count = round(self.cfg.sensor_column_count / binning)
+        x_voxel_size_um = round(x_voxel_size_um * binning)
+        y_voxel_size_um = round(y_voxel_size_um * binning)
+
         self.log.debug(f"Stack Capture starting memory usage: {self.get_mem_consumption():.3f}%")
         stack_file_names = {}  # names of the files we will create.
         # Flow Control flags.
@@ -454,24 +466,25 @@ class Exaspim(Spim):
         self.sample_pose.move_absolute(z=round(z_backup_pos))
         self.sample_pose.move_absolute(z=round(stage_z_pos))
         self.sample_pose.setup_ext_trigger_linear_move('z', frame_count,
-                                                       z_step_size_um / 1.0e3)
+                                                            z_step_size_um / 1.0e3)
+
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
             stack_file_names[ch] = f"{stack_prefix}_ch_{ch}.ims"
             mem_shape = (chunk_size,
-                         self.cfg.sensor_row_count,
-                         self.cfg.sensor_column_count)
+                         sensor_row_count,
+                         sensor_column_count)
             self.img_buffers[ch] = SharedDoubleBuffer(mem_shape,
                                                       dtype=self.cfg.datatype)
             chunk_dim_order = ('z', 'y', 'x')  # must agree with mem_shape
             if local_storage_dir is not None:
                 self.log.debug(f"Creating StackWriter for {ch}[nm] channel.")
                 self.stack_writer_workers[ch] = \
-                    StackWriter(self.cfg.sensor_row_count,
-                                self.cfg.sensor_column_count,
+                    StackWriter(sensor_row_count,
+                                sensor_column_count,
                                 frame_count, self.stage_x_pos_um, self.stage_y_pos_um,
-                                self.cfg.x_voxel_size_um, self.cfg.y_voxel_size_um,
-                                self.cfg.z_step_size_um,
+                                x_voxel_size_um, y_voxel_size_um,
+                                z_step_size_um,
                                 self.cfg.compressor_chunk_size,
                                 chunk_dim_order,
                                 self.cfg.compressor_thread_count,
@@ -483,7 +496,7 @@ class Exaspim(Spim):
 
             # Setup MIP process if specified to do so.
             if do_mip:
-                img_shape = (self.cfg.sensor_row_count, self.cfg.sensor_column_count)
+                img_shape = (sensor_row_count, sensor_column_count)
                 img_bytes = int(np.prod(img_shape, dtype=np.int64) * np.dtype(self.cfg.image_dtype).itemsize)
                 for ch in channels:
                     # Allocate shared memory location for latest image for mip process.
@@ -493,8 +506,8 @@ class Exaspim(Spim):
                     # Mip process will use img_buffers.write_buf to access latest image
                     # Create the process.
                     self.mip_processes[ch] = MIPProcessor(x_tile_num, y_tile_num, frame_count,
-                                                          self.cfg.sensor_row_count,
-                                                          self.cfg.sensor_column_count,
+                                                          sensor_row_count,
+                                                          sensor_column_count,
                                                           self.cfg.image_dtype,
                                                           self.mip_images_shm[ch].name,
                                                           self.deriv_storage_dir,
@@ -507,7 +520,7 @@ class Exaspim(Spim):
         remainder = frame_count % chunk_size
         last_chunk_size = chunk_size if not remainder else remainder
         start_time = perf_counter()
-        self.cam.start(len(channels) * frame_count, live=False)  # TODO: rewrite to block until ready.
+        self.cam.start(frame_count, live=False)  # TODO: rewrite to block until ready.
         try:
             # Images arrive serialized in repeating channel order.
             for stack_index in tqdm(range(frame_count), desc="ZStack progress"):
@@ -527,8 +540,7 @@ class Exaspim(Spim):
                                    f"{stack_index + 1:9}/{frame_count} for "
                                    f"{ch_index}[nm] channel.")
                     self.img_buffers[ch_index].write_buf[chunk_index] = \
-                        self.cam.grab_frame()
-
+                        self.downsampler.compute(self.cam.grab_frame(), int(np.log2(binning)))
                     # Also write a copy of the latest image to a location where
                     # the MIP processor can process it.
                     # First make sure that the mip process isn't using previous
@@ -539,7 +551,7 @@ class Exaspim(Spim):
                     self.mip_images[ch_index][:,:] = self.img_buffers[ch_index].write_buf[chunk_index][:,:]
                     self.mip_processes[ch_index].new_image.set()
                     self._check_camera_acquisition_state()
-                # Save the index of the most-recently captured frame to
+                                # Save the index of the most-recently captured frame to
                 # offer it to a live display upon request.
                 self.prev_frame_chunk_index = chunk_index
                 self.frame_index += 1
@@ -669,9 +681,7 @@ class Exaspim(Spim):
             if self.active_lasers is not None:
                 channel_id = (channel_id + 1) % len(self.active_lasers) if len(self.active_lasers) != 1 else 0
                 yield self.get_latest_image(self.active_lasers[channel_id]), self.active_lasers[channel_id]
-            yield#sleep((1 / self.cfg.daq_obj_kwds['livestream_frequency_hz']))
-
-
+            yield
 
     def stop_livestream(self):
         # Bail early if it's already stopped.
@@ -712,7 +722,7 @@ class Exaspim(Spim):
             with self.chunk_lock:
                 self.log.debug('Calling downsample from get_latest_image')
                 try:
-                    return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index])
+                    return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index], 5)
                 except:
                     return None
 
@@ -726,7 +736,7 @@ class Exaspim(Spim):
                     # Display "white noise" if no image is available.
                     return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
                                                                                     self.cfg.sensor_column_count),
-                                                                      dtype=self.cfg.image_dtype))
+                                                                      dtype=self.cfg.image_dtype), 5)
             except:
                 return None
 
@@ -752,7 +762,7 @@ class Exaspim(Spim):
         super().close()  # Call this last.
 
     def log_stack_acquisition_params(self, curr_tile_index, stack_prefix,
-                                     z_step_size_um):
+                                     z_step_size_um, binning):
         """helper function in main acquisition loop to log the current state
         before capturing a stack of images per channel."""
         for laser in self.active_lasers:
@@ -761,9 +771,9 @@ class Exaspim(Spim):
                     'tile_number': curr_tile_index,
                     'file_name': f'{stack_prefix}_ch_{laser}.ims',
                     'coordinate_transformations': [
-                        {'scale': [self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
-                                   self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
-                                   z_step_size_um]},
+                        {'scale': [self.cfg.tile_size_x_um / self.cfg.sensor_column_count * binning,
+                                   self.cfg.tile_size_y_um / self.cfg.sensor_row_count * binning,
+                                   z_step_size_um * binning]},
                         {'translation': [self.stage_x_pos_um * 0.001,
                                          self.stage_y_pos_um * 0.001,
                                          self.stage_z_pos_um * 0.001]}
@@ -777,9 +787,9 @@ class Exaspim(Spim):
                                 'detector_name': '',
                                 },
                     'channel_name': f'{laser}',
-                    'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count,
-                    'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count,
-                    'z_voxel_size': z_step_size_um,
+                    'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count * binning,
+                    'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count * binning,
+                    'z_voxel_size': z_step_size_um * binning,
                     'voxel_size_units': 'micrometers',
                     'tile_x_position': self.stage_x_pos_um * 0.001,
                     'tile_y_position': self.stage_y_pos_um * 0.001,
@@ -789,7 +799,7 @@ class Exaspim(Spim):
                     'lightsheet_angle_units': 'degrees',
                     'laser_wavelength': str(laser),
                     'laser_wavelength_units': "nanometers",
-                    'laser_power': 2000,
+                    'laser_power': 1000,
                     'laser_power_units': 'milliwatts',
                     'filter_wheel_index': 0,
                     'tags': ['schema']

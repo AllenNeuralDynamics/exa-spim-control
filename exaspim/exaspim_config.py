@@ -14,7 +14,6 @@ class ExaspimConfig(SpimConfig):
 
         # Make references to mutable objects.
         self.experiment_specs = self.cfg['experiment_specs']
-        self.waveform_specs = self.cfg['waveform_specs']
         self.compressor_specs = self.cfg['compressor_specs']
         self.file_transfer_specs = self.cfg['file_transfer_specs']
         self.stage_specs = self.cfg['sample_stage_specs']
@@ -32,20 +31,20 @@ class ExaspimConfig(SpimConfig):
         """Returns required time to play a waveform period for a given channel."""
         return self.camera_exposure_time \
                + self.get_etl_buffer_time(wavelength) \
-               + self.frame_rest_time \
-               + self.camera_dwell_time
+               + self.frame_rest_time(wavelength) \
+               + self.camera_dwell_time(wavelength)
 
-    def get_camera_delay_time(self, wavelength: int):
-        return self.channel_specs[str(wavelength)]['camera']['delay_time_s']
+    def get_binning(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['binning']
+
+    def get_frame_rest_time(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['frame_rest_time_s']
+
+    def get_ttl_pulse_time(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['ttl_pulse_time_s']
 
     def get_etl_amplitude(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['amplitude']
-
-    def get_galvo_a_setpoint(self, wavelength: int):
-        return self.channel_specs[str(wavelength)]['galvo_a']['setpoint']
-
-    def get_galvo_b_setpoint(self, wavelength: int):
-        return self.channel_specs[str(wavelength)]['galvo_b']['setpoint']
 
     def get_etl_offset(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['offset']
@@ -59,35 +58,31 @@ class ExaspimConfig(SpimConfig):
     def get_etl_buffer_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['etl']['buffer_time_s']
 
-    # Channel Specs
-    def get_channel_ao_voltage(self, wl):
-        return self.channel_specs[wl]['ao_voltage']
+    def get_channel_ao_voltage(self, wavelength: str):
+        return self.channel_specs[wavelength]['ao_voltage']
 
-    def set_channel_ao_voltage(self, wl, value):
-
-        self.channel_specs[wl]['ao_voltage'] = value
-
-    # Waveform Specs
-    @property
-    def ttl_pulse_time(self):
-        return self.waveform_specs['ttl_pulse_time_s']
-
-    @ttl_pulse_time.setter
-    def ttl_pulse_time(self, seconds):
-        """The "on-period" length of an external TTL trigger pulse."""
-        self.waveform_specs['ttl_pulse_time_s'] = seconds
+    def set_channel_ao_voltage(self, wavelength: str, value):
+        self.channel_specs[wavelength]['ao_voltage'] = value
 
     @property
-    def frame_rest_time(self):
-        return self.waveform_specs['frame_rest_time_s']
-
-    @frame_rest_time.setter
-    def frame_rest_time(self, seconds):
-        """The rest time in between frames for the ETL to snap back to its
-        starting position."""
-        self.waveform_specs['frame_rest_time_s'] = seconds
+    def camera_dwell_time(self):
+        """The time in seconds that a given row is exposed to the laser."""
+        # FIXME: this could be removed if derive the calculation from
+        #   slit width in the waveform_generator.
+        # (dwell time [us]) / (line interval [us/pixel]) is slit width.
+        # (slit width [pixels]) * (line interval [us/pixel]) * (1 [s]/1e6[us])
+        return self.slit_width * self.camera_line_interval_us / 1.0e6
 
     # Experiment Specs
+
+    @property
+    def slit_width(self):
+        """Slit width (in pixels) of the slit that moves along the frame"""
+        return self.experiment_specs['slit_width_pixels']
+
+    @slit_width.setter
+    def slit_width(self, pixels):
+        self.experiment_specs['slit_width_pixels'] = pixels
 
     @property
     def experimenters_name(self):
@@ -200,15 +195,6 @@ class ExaspimConfig(SpimConfig):
         return self.camera_specs['line_interval_us']
 
     @property
-    def slit_width(self):
-        """Slit width (in pixels) of the slit that moves along the frame"""
-        return self.design_specs['slit_width_pixels']
-
-    @slit_width.setter
-    def slit_width(self, pixels):
-        self.design_specs['slit_width_pixels'] = pixels
-
-    @property
     def camera_digital_gain(self):
         return self.camera_specs['digital_gain_adu']
 
@@ -278,34 +264,11 @@ class ExaspimConfig(SpimConfig):
         """dictionary {<analog output name> : <analog output channel>}."""
         return self.daq_obj_kwds['ao_channels']
 
-    # Dynamically generated keyword arguments.
-    @property
-    def daq_obj_kwds(self):
-        # Don't affect the config file's version by making a copy.
-        obj_kwds = copy.deepcopy(self.cfg['daq_driver_kwds'])
-        obj_kwds['period_time_s'] = sum([self.get_channel_cycle_time(ch)
-                                         for ch in self.channels])
-        return obj_kwds
-
-    # Derived properties. These do not have setters
-    @property
-    def daq_period_time(self):
-        return sum([self.get_channel_cycle_time(ch) for ch in self.channels])
-
     @property
     def camera_exposure_time(self):
         """Camera exposure time in seconds."""
         # (line interval [us]) * (number of rows [pixels]) * (1 [s] / 1e6 [us])
         return self.camera_line_interval_us * self.sensor_row_count / 1.0e6
-
-    @property
-    def camera_dwell_time(self):
-        """The time in seconds that a given row is exposed to the laser."""
-        # FIXME: this could be removed if derive the calculation from
-        #   slit width in the waveform_generator.
-        # (dwell time [us]) / (line interval [us/pixel]) is slit width.
-        # (slit width [pixels]) * (line interval [us/pixel]) * (1 [s]/1e6[us])
-        return self.slit_width * self.camera_line_interval_us / 1.0e6
 
     def sanity_check(self):
         error_msgs = []

@@ -11,7 +11,7 @@ from time import sleep
 class NI:
 
     def __init__(self, dev_name: str, samples_per_sec: float, livestream_frequency_hz : int,
-                 period_time_s: float, ao_channels: dict):
+                 ao_channels: dict):
         """init.
 
         :param dev_name: NI device name as it appears in Device Manager.
@@ -27,15 +27,12 @@ class NI:
         self.dev.reset_device()
         self.samples_per_sec = samples_per_sec
         self.livestream_frequency_hz = livestream_frequency_hz
-        self.period_time_s = period_time_s
         self.ao_names_to_channels = ao_channels
-        # Total samples is the sum of the samples for every used laser channel.
-        self.daq_samples = round(self.samples_per_sec * self.period_time_s)
         self.co_task = None
         self.ao_task = None
         self.live = None
 
-    def configure(self, live: bool = False):
+    def configure(self, live: bool = False, channel: int):
         """Configure the NI card to play either `frame_count` frames or
         continuously.
 
@@ -44,7 +41,10 @@ class NI:
         :param live: if True, play the waveforms indefinitely. `frame_count`
             must be left unspecified in this case. Otherwise, play the
             waveforms for the specified `frame_count`.
+        :param channel: wavelength integer
         """
+        # Total samples is the sum of the samples for every used laser channel.
+        self.daq_samples = round(self.samples_per_sec * self.get_channel_cycle_time(channel))
         self.live = live
         frequency = self.samples_per_sec/self.daq_samples if not live else self.livestream_frequency_hz
         self.close()    # If tasks exist then close them
