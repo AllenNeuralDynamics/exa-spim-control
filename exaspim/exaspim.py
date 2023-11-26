@@ -175,6 +175,7 @@ class Exaspim(Spim):
         self.active_lasers = wavelengths
         self.log.info("Generating waveforms.")
         voltages_t = generate_waveforms(self.cfg, plot=False, channels=self.active_lasers, live=live)
+        print(voltages_t.shape)
         self.log.info("Writing waveforms to hardware.")
         self.ni.assign_waveforms(voltages_t, self.scout_mode)
 
@@ -315,8 +316,8 @@ class Exaspim(Spim):
                        f" per channel.")
         self.frame_index = 0  # Reset image index.
         start_time = perf_counter()  # For logging elapsed time.
-        # Setup containers
-        self._setup_waveform_hardware(channels)
+        # # Setup containers
+        # self._setup_waveform_hardware(channels)
         # Move sample to preset starting position if specified.
         # TODO: pass this in as a parameter.
         if self.start_pos is not None:
@@ -338,58 +339,71 @@ class Exaspim(Spim):
                 # self.stage_y_pos_um = 0 # TODO, this changes for reversing tiling
                 self.stage_y_pos_um = (ytiles-1)*y_grid_step_um
                 for y in range(ytiles):
-                    self.sample_pose.move_absolute(
-                        y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
-                    if start_tile_index <= self.curr_tile_index <= end_tile_index:
-                        self.log.info(f"tile: ({x}, {y}); stage_position: "
-                                      f"({self.stage_x_pos_um:.3f}[um], "
-                                      f"{self.stage_y_pos_um:.3f}[um])")
-                        stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
-                        # Log stack capture start state.
-                        self.log_stack_acquisition_params(self.curr_tile_index,
-                                                          stack_prefix,
-                                                          z_step_size_um)
-                        # TODO, should we do the arithmetic outside of the Camera class?
-                        # TODO, should we transfer this small file or just write directly over the network?
-                        tile_start = time()
-                        # Collect background image for this tile
-                        self.background_image.set()
-                        self.log.info("Starting background image.")
-                        bkg_img = self.cam.collect_background(frame_average=10)
-                        # Save background image TIFF file
-                        tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}.tiff")).absolute()), bkg_img, tile=(256, 256))
-                        self.log.info("Completed background image.")
-                        self.background_image.clear()
-                        # Collect the Z stacks for all channels.
-                        output_filenames = \
-                            self._collect_zstacks(channels, ztiles, z_step_size_um,
-                                                  chunk_size, local_storage_dir,
-                                                  stack_prefix, x, y, do_mip)
-                        # Start transferring zstack file to its destination.
-                        # Note: Image transfer should be faster than image capture,
-                        #   but we still wait for prior processes to finish.
-                        if self.stack_transfer_workers:
-                            self.log.info("Waiting for zstack transfer processes "
-                                          "to complete.")
-                            for channel in list(self.stack_transfer_workers.keys()):
-                                worker = self.stack_transfer_workers.pop(channel)
-                                worker.join()
-                        # Kick off Stack transfer processes per channel.
-                        # Bail if we don't need to transfer anything.
-                        if img_storage_dir:
-                            for channel, filename in output_filenames.items():
-                                self.log.info(f"Starting transfer process for {filename}.")
-                                self.stack_transfer_workers[channel] = \
-                                    FileTransfer(local_storage_dir / filename,
-                                                 img_storage_dir / filename,
-                                                 self.cfg.ftp, self.cfg.ftp_flags)
-                                self.stack_transfer_workers[channel].start()
-                        else:
-                            self.log.info("Skipping file transfer process. File "
-                                          "is already at its destination.")
-                        self.tile_time_s = time() - tile_start
-                    self.curr_tile_index += 1
 
+                    for ch in channels:
+
+                        self._setup_waveform_hardware([ch])
+                        # MOVE N AXIS OF TIGER BOX TO REFOCUS PER COLOR
+                        print(self.cfg.get_focus_position(ch))
+                        assert self.cfg.get_focus_position(ch) < -500
+                        print(self.cfg.get_focus_position(ch))
+                        assert self.cfg.get_focus_position(ch) > -1500
+                        print(self.cfg.get_focus_position(ch) * STEPS_PER_UM)
+                        self.tigerbox.move_absolute(n=round(self.cfg.get_focus_position(ch) * STEPS_PER_UM))
+
+                        self.sample_pose.move_absolute(
+                            y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
+
+                        if start_tile_index <= self.curr_tile_index <= end_tile_index:
+                            self.log.info(f"tile: ({x}, {y}); stage_position: "
+                                          f"({self.stage_x_pos_um:.3f}[um], "
+                                          f"{self.stage_y_pos_um:.3f}[um])")
+                            stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
+                            # Log stack capture start state.
+                            self.log_stack_acquisition_params(self.curr_tile_index,
+                                                              stack_prefix,
+                                                              z_step_size_um)
+                            # TODO, should we do the arithmetic outside of the Camera class?
+                            # TODO, should we transfer this small file or just write directly over the network?
+                            tile_start = time()
+                            # Collect background image for this tile
+                            self.background_image.set()
+                            self.log.info("Starting background image.")
+                            bkg_img = self.cam.collect_background(frame_average=10)
+                            # Save background image TIFF file
+                            tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}_ch_{ch}.tiff")).absolute()), bkg_img, tile=(256, 256))
+                            self.log.info("Completed background image.")
+                            self.background_image.clear()
+                            # Collect the Z stacks for all channels.
+                            output_filenames = \
+                                self._collect_zstacks([ch], ztiles, z_step_size_um,
+                                                      chunk_size, local_storage_dir,
+                                                      stack_prefix, x, y, do_mip)
+                            # Start transferring zstack file to its destination.
+                            # Note: Image transfer should be faster than image capture,
+                            #   but we still wait for prior processes to finish.
+                            if self.stack_transfer_workers:
+                                self.log.info("Waiting for zstack transfer processes "
+                                              "to complete.")
+                                for channel in list(self.stack_transfer_workers.keys()):
+                                    worker = self.stack_transfer_workers.pop(channel)
+                                    worker.join()
+                            # Kick off Stack transfer processes per channel.
+                            # Bail if we don't need to transfer anything.
+                            if img_storage_dir:
+                                for channel, filename in output_filenames.items():
+                                    self.log.info(f"Starting transfer process for {filename}.")
+                                    self.stack_transfer_workers[channel] = \
+                                        FileTransfer(local_storage_dir / filename,
+                                                     img_storage_dir / filename,
+                                                     self.cfg.ftp, self.cfg.ftp_flags)
+                                    self.stack_transfer_workers[channel].start()
+                            else:
+                                self.log.info("Skipping file transfer process. File "
+                                              "is already at its destination.")
+                            self.tile_time_s = time() - tile_start
+
+                    self.curr_tile_index += 1
                     self.stage_y_pos_um = self.stage_y_pos_um - y_grid_step_um # TODO, this changes for reversing tiling
                 self.stage_x_pos_um = self.stage_x_pos_um + x_grid_step_um # TODO, this changes for reversing tiling
             self.acquiring_images = False
@@ -625,13 +639,6 @@ class Exaspim(Spim):
             msg = "Acquisition loop has dropped a frame."
             self.log.error(msg)
             raise RuntimeError(msg)
-
-    def _compute_mip_shapes(self, volume_x: float, volume_y: float,
-                            volume_z: float, percent_x_overlap: float,
-                            percent_y_overlap: float):
-        """return three 2-tuples indicating the shapes of the mips."""
-        raise NotImplementedError
-        # xy, xz, yz = (0,0), (0,0), (0,0)
 
     def start_livestream(self, wavelength: list[int] = None, scout_mode: bool = False):
 

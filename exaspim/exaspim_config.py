@@ -35,6 +35,9 @@ class ExaspimConfig(SpimConfig):
                + self.frame_rest_time \
                + self.camera_dwell_time
 
+    def get_focus_position(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['focus']['position']
+
     def get_camera_delay_time(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['camera']['delay_time_s']
 
@@ -283,14 +286,16 @@ class ExaspimConfig(SpimConfig):
     def daq_obj_kwds(self):
         # Don't affect the config file's version by making a copy.
         obj_kwds = copy.deepcopy(self.cfg['daq_driver_kwds'])
-        obj_kwds['period_time_s'] = sum([self.get_channel_cycle_time(ch)
-                                         for ch in self.channels])
+        # obj_kwds['period_time_s'] = sum([self.get_channel_cycle_time(ch)
+        #                                  for ch in self.channels])
+        obj_kwds['period_time_s'] = self.get_channel_cycle_time(488)
         return obj_kwds
 
     # Derived properties. These do not have setters
     @property
     def daq_period_time(self):
-        return sum([self.get_channel_cycle_time(ch) for ch in self.channels])
+        # return sum([self.get_channel_cycle_time(ch) for ch in self.channels])
+        return self.get_channel_cycle_time(488)
 
     @property
     def camera_exposure_time(self):
