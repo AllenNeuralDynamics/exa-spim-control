@@ -8,7 +8,6 @@ from pathlib import Path
 
 class FileTransfer(Process):
 
-    # def configure(self, cfg):
     def __init__(self, source_path: Path, dest_path: Path, ftp: str,
                  ftp_flags: str = ""):
         super().__init__()

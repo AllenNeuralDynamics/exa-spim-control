@@ -7,7 +7,6 @@ class DownSample:
 
     def __init__(self):
         self.downsample_factor = 2
-        self.downsample_levels = 5
 
         # opencl kernel
         self.kernel = """
@@ -29,10 +28,10 @@ class DownSample:
         self.prog = OCLProgram(src_str=self.kernel,
                                build_options=['-D', f'BLOCK={self.downsample_factor}'])
 
-    def compute(self, image):
+    def compute(self, image, levels):
         pyramid = []
         pyramid.append(image)
-        for level in range(0, self.downsample_levels):
+        for level in range(0, levels):
             x_g = OCLArray.from_array(image)
             y_g = OCLArray.empty(tuple(s // self.downsample_factor for s in image.shape), image.dtype)
             self.prog.run_kernel(f'downsample2d', y_g.shape[::-1],
