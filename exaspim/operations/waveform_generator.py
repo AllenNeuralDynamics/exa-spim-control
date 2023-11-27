@@ -23,7 +23,7 @@ def plot_waveforms_to_pdf(t, voltages_t):
     axes.legend(loc="upper right")
     fig.savefig("plot.pdf")
 
-def generate_waveforms(cfg, plot: bool = False, channel: int, live = False):
+def generate_waveforms(cfg, channel: int, plot: bool = False, live = False):
 
     # Create lookup table to go from ao channel name to voltages_t index.
     #   This must match the order the NI card will create them.
@@ -37,7 +37,6 @@ def generate_waveforms(cfg, plot: bool = False, channel: int, live = False):
     # Create channel-specific samples arrays for various relevant timings
     rest_samples = int(cfg.daq_sample_rate * cfg.get_frame_rest_time(channel))
     pulse_samples = int(cfg.daq_sample_rate * cfg.get_ttl_pulse_time(channel))
-    camera_delay_samples = int(cfg.daq_sample_rate * cfg.get_camera_delay_time(channel))
     etl_buffer_samples = int(cfg.daq_sample_rate * cfg.get_etl_buffer_time(channel))
     total_samples = camera_exposure_samples + etl_buffer_samples + rest_samples + dwell_time_samples
 
@@ -64,13 +63,13 @@ def generate_waveforms(cfg, plot: bool = False, channel: int, live = False):
     cfg.get_etl_offset(channel) - cfg.get_etl_amplitude(channel)  # delay snapback until last row is done exposing
 
     # Generate camera TTL signal
-    voltages_out[n2c_index['camera'], int(etl_buffer_samples / 2.0) + camera_delay_samples:int(
-        etl_buffer_samples / 2.0) + camera_delay_samples + pulse_samples] = 5.0
+    voltages_out[n2c_index['camera'], int(etl_buffer_samples / 2.0):int(
+        etl_buffer_samples / 2.0) + pulse_samples] = 5.0
 
     # Generate laser TTL signal
     voltages_out[n2c_index[f'laser_{channel}'],  # FIXME: remove n2c or move it into the config.
-    int(etl_buffer_samples / 2.0) + camera_delay_samples:int(
-        etl_buffer_samples / 2.0) + camera_exposure_samples + dwell_time_samples + camera_delay_samples] = cfg.get_channel_ao_voltage(str(channel))
+    int(etl_buffer_samples / 2.0):int(
+        etl_buffer_samples / 2.0) + camera_exposure_samples + dwell_time_samples] = cfg.get_channel_ao_voltage(str(channel))
 
     # Generate stage TTL signal
     volts = 5.0 if not live else 0.0

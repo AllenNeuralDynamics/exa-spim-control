@@ -32,7 +32,7 @@ class NI:
         self.ao_task = None
         self.live = None
 
-    def configure(self, live: bool = False, channel: int):
+    def configure(self, channel: int, channel_cycle_time:float, live: bool = False):
         """Configure the NI card to play either `frame_count` frames or
         continuously.
 
@@ -44,7 +44,7 @@ class NI:
         :param channel: wavelength integer
         """
         # Total samples is the sum of the samples for every used laser channel.
-        self.daq_samples = round(self.samples_per_sec * self.get_channel_cycle_time(channel))
+        self.daq_samples = round(self.samples_per_sec * channel_cycle_time)
         self.live = live
         frequency = self.samples_per_sec/self.daq_samples if not live else self.livestream_frequency_hz
         self.close()    # If tasks exist then close them
@@ -75,7 +75,6 @@ class NI:
         self.ao_task.triggers.start_trigger.retriggerable = True
         # TODO: trigger source should be in the config.
         self.ao_task.triggers.start_trigger.cfg_dig_edge_start_trig(
-#			trigger_source=f'/{self.dev_name}/PFI1',
             trigger_source=f'/{self.dev_name}/PFI0',
             trigger_edge=Slope.RISING)
 
@@ -115,8 +114,6 @@ class NI:
     def start(self):
         if self.ao_task:
             self.ao_task.start()
-        # time.sleep(2*(self.daq_samples/self.update_freq)) # wait for last AO to play
-        # print(2*(self.daq_samples/self.update_freq))
         if self.co_task:
             self.co_task.start()
 
@@ -130,8 +127,6 @@ class NI:
                 self.co_task.stop()
             if sleep_time is not None:
                 sleep(sleep_time)  # Sleep so ao task can finish
-            # time.sleep(2*(self.daq_samples/self.update_freq)) # wait for last AO to play
-            # print(2*(self.daq_samples/self.update_freq))
             if self.ao_task:
                 self.ao_task.stop()
 
@@ -140,4 +135,3 @@ class NI:
             self.co_task.close()
         if self.ao_task:
             self.ao_task.close()
-

@@ -170,10 +170,10 @@ class Exaspim(Spim):
         # Only configures daq on the initiation of livestream
         if not self.livestream_enabled.is_set() and self.ni.live != live:
             self.log.info("Configuring NIDAQ")
-            self.ni.configure(live=live, channel=wavelength)
+            self.ni.configure(channel=wavelength, channel_cycle_time=self.cfg.get_channel_cycle_time(wavelength), live=live)
 
         self.log.info("Generating waveforms.")
-        voltages_t = generate_waveforms(self.cfg, plot=False, channel=wavelength, live=live)
+        voltages_t = generate_waveforms(self.cfg, channel=wavelength, plot=False, live=live)
         self.log.info("Writing waveforms to hardware.")
         self.ni.assign_waveforms(voltages_t, self.scout_mode)
 
@@ -338,35 +338,35 @@ class Exaspim(Spim):
                 for y in range(ytiles):
                     self.sample_pose.move_absolute(
                         y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
-                    for ch in range(channels):
+                    for ch in channels:
                         binning = self.cfg.get_binning(ch)
                         self._setup_waveform_hardware(ch)
-                        # MOVE ASI MOTOR
+
+                        # move asi focus motor
+                        focus_position = self.cfg.get_focus_position(ch)
+                        assert focus_position < -500
+                        assert focus_position > -1500
+                        self.tigerbox.move_absolute(n=round(focus_position * STEPS_PER_UM))
+
                         if start_tile_index <= self.curr_tile_index <= end_tile_index:
-                            self.log.info(f"tile: ({x}, {y}); stage_position: "
-                                          f"({self.stage_x_pos_um:.3f}[um], "
-                                          f"{self.stage_y_pos_um:.3f}[um])")
+                            self.log.info(f"channel: {ch}")
+                            self.log.info(f"tile: ({x}, {y}); stage_position = "
+                                          f"x: {self.stage_x_pos_um:.3f} [um], "
+                                          f"y: {self.stage_y_pos_um:.3f} [um], "
+                                          f"z: {self.stage_z_pos_um:.3f} [um]")
+                            self.log.info(f"focus position: {focus_position} [um]")
                             stack_prefix = f"{tile_prefix}_x_{x:04}_y_{y:04}_z_0000"
                             # Log stack capture start state.
                             self.log_stack_acquisition_params(self.curr_tile_index,
                                                               stack_prefix,
                                                               z_step_size_um,
-                                                              binning)
-                            # TODO, should we do the arithmetic outside of the Camera class?
-                            # TODO, should we transfer this small file or just write directly over the network?
+                                                              binning,
+                                                              ch)
                             tile_start = time()
-                            # Collect background image for this tile
-                            self.background_image.set()
-                            self.log.info("Starting background image.")
-                            bkg_img = self.cam.collect_background(frame_average=10)
-                            # Save background image TIFF file
-                            tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}_ch_{ch}.tiff")).absolute()), bkg_img, tile=(256, 256))
-                            self.log.info("Completed background image.")
-                            self.background_image.clear()
                             # Collect the Z stacks for single channel.
                             output_filenames = \
                                 self._collect_zstacks([ch], binning, ztiles, z_step_size_um,
-                                                      chunk_size, local_storage_dir,
+                                                      chunk_size, local_storage_dir, deriv_storage_dir,
                                                       stack_prefix, x, y, do_mip)
                             # Start transferring zstack file to its destination.
                             # Note: Image transfer should be faster than image capture,
@@ -413,6 +413,7 @@ class Exaspim(Spim):
     def _collect_zstacks(self, channels: list[int], binning: int, frame_count: int,
                          z_step_size_um: float, chunk_size: int,
                          local_storage_dir: Path,
+                         deriv_storage_dir: Path,
                          stack_prefix: str,
                          x_tile_num,
                          y_tile_num,
@@ -448,13 +449,20 @@ class Exaspim(Spim):
         :return: dict, keyed by channel name, of the filenames written to disk.
         """
         # Adjust inputs for binning
-        z_step_size_um = round(z_step_size_um * binning)
+        z_step_size_um = z_step_size_um * binning
         frame_count = round(frame_count / binning)
         sensor_row_count = round(self.cfg.sensor_row_count / binning)
         sensor_column_count = round(self.cfg.sensor_column_count / binning)
-        x_voxel_size_um = round(x_voxel_size_um * binning)
-        y_voxel_size_um = round(y_voxel_size_um * binning)
-
+        x_voxel_size_um = self.cfg.x_voxel_size_um * binning
+        y_voxel_size_um = self.cfg.y_voxel_size_um * binning
+        self.log.info(f"binning: {binning}; voxel size = "
+                      f"x: {x_voxel_size_um:.3f} [um], "
+                      f"y: {y_voxel_size_um:.3f} [um], "
+                      f"z: {z_step_size_um:.3f} [um]")
+        self.log.info(f"stack size: "
+                      f"x: {sensor_row_count} [px], "
+                      f"y: {sensor_column_count} [px], "
+                      f"z: {frame_count} [px]")
         self.log.debug(f"Stack Capture starting memory usage: {self.get_mem_consumption():.3f}%")
         stack_file_names = {}  # names of the files we will create.
         # Flow Control flags.
@@ -470,6 +478,17 @@ class Exaspim(Spim):
 
         # Allocate shard memory and create StackWriter per-channel.
         for ch in channels:
+
+            # Collect background image for this tile
+            self.background_image.set()
+            self.log.info("Starting background image.")
+            bkg_img = self.cam.collect_background(frame_average=10)
+            bkg_img = self.downsampler.compute(bkg_img, int(np.log2(binning)))[-1]
+            # Save background image TIFF file
+            tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}_ch_{ch}.tiff")).absolute()), bkg_img)
+            self.log.info("Completed background image.")
+            self.background_image.clear()
+
             stack_file_names[ch] = f"{stack_prefix}_ch_{ch}.ims"
             mem_shape = (chunk_size,
                          sensor_row_count,
@@ -539,8 +558,12 @@ class Exaspim(Spim):
                     self.log.debug(f"Grabbing frame "
                                    f"{stack_index + 1:9}/{frame_count} for "
                                    f"{ch_index}[nm] channel.")
-                    self.img_buffers[ch_index].write_buf[chunk_index] = \
-                        self.downsampler.compute(self.cam.grab_frame(), int(np.log2(binning)))
+                    if binning == 1:
+                        self.img_buffers[ch_index].write_buf[chunk_index] = \
+                            self.cam.grab_frame()
+                    else:
+                        self.img_buffers[ch_index].write_buf[chunk_index] = \
+                            self.downsampler.compute(self.cam.grab_frame(), int(np.log2(binning)))[-1]
                     # Also write a copy of the latest image to a location where
                     # the MIP processor can process it.
                     # First make sure that the mip process isn't using previous
@@ -645,7 +668,7 @@ class Exaspim(Spim):
         raise NotImplementedError
         # xy, xz, yz = (0,0), (0,0), (0,0)
 
-    def start_livestream(self, wavelength: list[int] = None, scout_mode: bool = False):
+    def start_livestream(self, wavelength: int = None, scout_mode: bool = False):
 
         # Bail early if it's started.
         if self.livestream_enabled.is_set():
@@ -654,7 +677,7 @@ class Exaspim(Spim):
         self.log.debug("Starting livestream.")
         self.log.warning(f"Turning on the {wavelength}[nm] laser.")
         self.scout_mode = scout_mode
-        self._setup_waveform_hardware(wavelength, live=True)
+        self._setup_waveform_hardware(wavelength=wavelength, live=True)
         self.cam.start(live=True)
         self.ni.start()
         self.livestream_enabled.set()
@@ -679,8 +702,7 @@ class Exaspim(Spim):
         #     if self.livestream_enabled.is_set() or self.acquiring_images and self.active_lasers is not None:
         while self.livestream_enabled.is_set() or self.acquiring_images:
             if self.active_lasers is not None:
-                channel_id = (channel_id + 1) % len(self.active_lasers) if len(self.active_lasers) != 1 else 0
-                yield self.get_latest_image(self.active_lasers[channel_id]), self.active_lasers[channel_id]
+                yield self.get_latest_image(self.active_lasers), self.active_lasers
             yield
 
     def stop_livestream(self):
@@ -730,8 +752,8 @@ class Exaspim(Spim):
         if not img_buffer or self.prev_frame_chunk_index is None or not self.acquiring_images:
             try:
                 if self.livestream_enabled.is_set():
-                    # return self.downsampler.compute(np.clip(self.cam.grab_frame()-self.bkg_image+100, 100, 2**16-1)-100)
-                    return self.downsampler.compute(self.cam.grab_frame())
+                    temp = self.cam.grab_frame()
+                    return self.downsampler.compute(temp, levels=5)
                 elif self.simulated:
                     # Display "white noise" if no image is available.
                     return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
@@ -762,49 +784,48 @@ class Exaspim(Spim):
         super().close()  # Call this last.
 
     def log_stack_acquisition_params(self, curr_tile_index, stack_prefix,
-                                     z_step_size_um, binning):
+                                     z_step_size_um, binning, channel):
         """helper function in main acquisition loop to log the current state
         before capturing a stack of images per channel."""
-        for laser in self.active_lasers:
-            tile_schema_params = \
-                {
-                    'tile_number': curr_tile_index,
-                    'file_name': f'{stack_prefix}_ch_{laser}.ims',
-                    'coordinate_transformations': [
-                        {'scale': [self.cfg.tile_size_x_um / self.cfg.sensor_column_count * binning,
-                                   self.cfg.tile_size_y_um / self.cfg.sensor_row_count * binning,
-                                   z_step_size_um * binning]},
-                        {'translation': [self.stage_x_pos_um * 0.001,
-                                         self.stage_y_pos_um * 0.001,
-                                         self.stage_z_pos_um * 0.001]}
-                    ],
-                    'channel': {'channel_name': str(laser),
-                                'light_source_name': str(laser),
-                                'excitation_wavelength': str(laser),
-                                'excitation_power': '1000.0',
-                                'filter_wheel_index': 0,
-                                'filter_names': [],
-                                'detector_name': '',
-                                },
-                    'channel_name': f'{laser}',
-                    'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count * binning,
-                    'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count * binning,
-                    'z_voxel_size': z_step_size_um * binning,
-                    'voxel_size_units': 'micrometers',
-                    'tile_x_position': self.stage_x_pos_um * 0.001,
-                    'tile_y_position': self.stage_y_pos_um * 0.001,
-                    'tile_z_position': self.stage_z_pos_um * 0.001,
-                    'tile_position_units': 'millimeters',
-                    'lightsheet_angle': 0,
-                    'lightsheet_angle_units': 'degrees',
-                    'laser_wavelength': str(laser),
-                    'laser_wavelength_units': "nanometers",
-                    'laser_power': 1000,
-                    'laser_power_units': 'milliwatts',
-                    'filter_wheel_index': 0,
-                    'tags': ['schema']
-                }
-            self.log.info('tile data', extra=tile_schema_params)
+        tile_schema_params = \
+            {
+                'tile_number': curr_tile_index,
+                'file_name': f'{stack_prefix}_ch_{channel}.ims',
+                'coordinate_transformations': [
+                    {'scale': [self.cfg.tile_size_x_um / self.cfg.sensor_column_count * binning,
+                               self.cfg.tile_size_y_um / self.cfg.sensor_row_count * binning,
+                               z_step_size_um * binning]},
+                    {'translation': [self.stage_x_pos_um * 0.001,
+                                     self.stage_y_pos_um * 0.001,
+                                     self.stage_z_pos_um * 0.001]}
+                ],
+                'channel': {'channel_name': str(channel),
+                            'light_source_name': str(channel),
+                            'excitation_wavelength': str(channel),
+                            'excitation_power': '1000.0',
+                            'filter_wheel_index': 0,
+                            'filter_names': [],
+                            'detector_name': '',
+                            },
+                'channel_name': f'{channel}',
+                'x_voxel_size': self.cfg.tile_size_x_um / self.cfg.sensor_column_count * binning,
+                'y_voxel_size': self.cfg.tile_size_y_um / self.cfg.sensor_row_count * binning,
+                'z_voxel_size': z_step_size_um * binning,
+                'voxel_size_units': 'micrometers',
+                'tile_x_position': self.stage_x_pos_um * 0.001,
+                'tile_y_position': self.stage_y_pos_um * 0.001,
+                'tile_z_position': self.stage_z_pos_um * 0.001,
+                'tile_position_units': 'millimeters',
+                'lightsheet_angle': 0,
+                'lightsheet_angle_units': 'degrees',
+                'laser_wavelength': str(channel),
+                'laser_wavelength_units': "nanometers",
+                'laser_power': 1000,
+                'laser_power_units': 'milliwatts',
+                'filter_wheel_index': 0,
+                'tags': ['schema']
+            }
+        self.log.info('tile data', extra=tile_schema_params)
         # Log system states.
         system_schema_data = \
             {
@@ -822,13 +843,7 @@ class Exaspim(Spim):
             }
         self.log.info('system state', extra=system_schema_data)
         # Log settings per laser channel.
-        for laser in self.active_lasers:
-            laser = str(laser)
-            for key in self.cfg.channel_specs[laser]['etl']:
-                settings_schema_data[f'daq_etl {key}'] = f'{self.cfg.channel_specs[laser]["etl"][key]}'
-            for key in self.cfg.channel_specs[laser]['galvo_a']:
-                settings_schema_data[f'daq_galvo_a {key}'] = f'{self.cfg.channel_specs[laser]["galvo_a"][key]}'
-            for key in self.cfg.channel_specs[laser]['galvo_b']:
-                settings_schema_data[f'daq_galvo_b {key}'] = f'{self.cfg.channel_specs[laser]["galvo_b"][key]}'
-            self.log.info(f'laser channel {laser} acquisition settings',
-                          extra=settings_schema_data)
+        for key in self.cfg.channel_specs[str(channel)]['etl']:
+            settings_schema_data[f'daq_etl {key}'] = f'{self.cfg.channel_specs[str(channel)]["etl"][key]}'
+        self.log.info(f'laser channel {channel} acquisition settings',
+                      extra=settings_schema_data)

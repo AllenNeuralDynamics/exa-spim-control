@@ -19,11 +19,13 @@ class ExaspimConfig(SpimConfig):
         self.stage_specs = self.cfg['sample_stage_specs']
         self.channel_specs = self.cfg['channel_specs']
         self.camera_specs = self.cfg['camera_specs']
+        self.imaging_specs = self.cfg['imaging_specs']
 
         # Keyword arguments for instantiating objects.
         self.joystick_kwds = self.cfg['joystick_kwds']
         self.sample_pose_kwds = self.cfg['sample_pose_kwds']
         self.tiger_obj_kwds = self.cfg['tiger_controller_driver_kwds']
+        self.daq_obj_kwds = self.cfg['daq_driver_kwds']
         # Other obj kwds are generated dynamically.
 
     # Per-channel getter methods.
@@ -31,8 +33,11 @@ class ExaspimConfig(SpimConfig):
         """Returns required time to play a waveform period for a given channel."""
         return self.camera_exposure_time \
                + self.get_etl_buffer_time(wavelength) \
-               + self.frame_rest_time(wavelength) \
-               + self.camera_dwell_time(wavelength)
+               + self.get_frame_rest_time(wavelength) \
+               + self.camera_dwell_time
+
+    def get_focus_position(self, wavelength: int):
+        return self.channel_specs[str(wavelength)]['focus_position']
 
     def get_binning(self, wavelength: int):
         return self.channel_specs[str(wavelength)]['binning']
@@ -78,11 +83,11 @@ class ExaspimConfig(SpimConfig):
     @property
     def slit_width(self):
         """Slit width (in pixels) of the slit that moves along the frame"""
-        return self.experiment_specs['slit_width_pixels']
+        return self.imaging_specs['slit_width_pixels']
 
     @slit_width.setter
     def slit_width(self, pixels):
-        self.experiment_specs['slit_width_pixels'] = pixels
+        self.imaging_specs['slit_width_pixels'] = pixels
 
     @property
     def experimenters_name(self):

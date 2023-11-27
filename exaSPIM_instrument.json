@@ -1,0 +1,711 @@
+{
+   "describedBy": "https://raw.githubusercontent.com/AllenNeuralDynamics/aind-data-schema/main/src/aind_data_schema/imaging/instrument.py",
+   "schema_version": "0.9.1",
+   "instrument_id": "exaSPIM1-01",
+   "modification_date": "2023-10-27",
+   "instrument_type": "exaSPIM",
+   "manufacturer": {
+      "name": "Custom",
+      "abbreviation": null,
+      "registry": null,
+      "registry_identifier": null
+   },
+   "temperature_control": false,
+   "humidity_control": false,
+   "optical_tables": [
+      {
+         "device_type": "OpticalTable",
+         "name": null,
+         "serial_number": "10349925",
+         "manufacturer": {
+            "name": "MKS Newport",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "00k17f049"
+         },
+         "model": "VIS3648-PG2-325A",
+         "notes": null,
+         "length": 36,
+         "width": 48,
+         "table_size_unit": "inch",
+         "vibration_control": true
+      }
+   ],
+   "objectives": [
+      {
+         "device_type": "Objective",
+         "name": "Detection objective",
+         "serial_number": "15618844",
+         "manufacturer": {
+            "name": "Vieworks",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "JM_DIAMOND 5.0X/1.3",
+         "notes": "detection objective. manufacturer collaboration between Schneider-Kreuznach and Vieworks",
+         "numerical_aperture": 0.305,
+         "magnification": 5.0,
+         "immersion": "air"
+      },
+      {
+         "device_type": "Objective",
+         "name": "Excitation objective",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "TL2X-SAP",
+         "notes": "excitation objective. magnification assuming 200 mm tube lens focal length",
+         "numerical_aperture": 0.1,
+         "magnification": 2.0,
+         "immersion": "air"
+      }
+   ],
+   "detectors": [
+      {
+         "device_type": "Detector",
+         "name": null,
+         "serial_number": "MP151BBX006",
+         "manufacturer": {
+            "name": "Vieworks",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "VP-151MX-M6H0",
+         "notes": null,
+         "detector_type": "Camera",
+         "data_interface": "Coax",
+         "cooling": "air",
+         "immersion": null,
+         "chroma": null,
+         "sensor_width": null,
+         "sensor_height": null,
+         "size_unit": "pixel",
+         "bit_depth": null,
+         "bin_mode": "none",
+         "bin_width": null,
+         "bin_height": null,
+         "bin_unit": "pixel",
+         "gain": null,
+         "crop_width": null,
+         "crop_height": null,
+         "crop_unit": "pixel"
+      }
+   ],
+   "light_sources": [
+      {
+         "device_type": "Laser",
+         "name": "488 nm laser",
+         "serial_number": "MX1275",
+         "manufacturer": {
+            "name": "Coherent Scientific",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "031tysd23"
+         },
+         "model": "Genesis MX488-1000 STM OPSLaser-Diode System",
+         "notes": "Housed in custom laser combiner. Water cooled.",
+         "wavelength": 488,
+         "wavelength_unit": "nanometer",
+         "maximum_power": 1000,
+         "power_unit": "milliwatt",
+         "coupling": "Free-space",
+         "coupling_efficiency": null,
+         "coupling_efficiency_unit": "percent",
+         "item_number": null
+      },
+      {
+         "device_type": "Laser",
+         "name": "561 nm laser",
+         "serial_number": "MX1276",
+         "manufacturer": {
+            "name": "Coherent Scientific",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "031tysd23"
+         },
+         "model": "Genesis MX561-1000 STM OPSLaser-Diode System",
+         "notes": "Housed in custom laser combiner. Water cooled.",
+         "wavelength": 561,
+         "wavelength_unit": "nanometer",
+         "maximum_power": 1000,
+         "power_unit": "milliwatt",
+         "coupling": "Free-space",
+         "coupling_efficiency": null,
+         "coupling_efficiency_unit": "percent",
+         "item_number": null
+      },
+      {
+         "device_type": "Laser",
+         "name": "639 nm laser",
+         "serial_number": "MX1274",
+         "manufacturer": {
+            "name": "Coherent Scientific",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "031tysd23"
+         },
+         "model": "Genesis MX639-1000 STM OPSLaser-Diode System",
+         "notes": "Housed in custom laser combiner. Water cooled.",
+         "wavelength": 639,
+         "wavelength_unit": "nanometer",
+         "maximum_power": 1000,
+         "power_unit": "milliwatt",
+         "coupling": "Free-space",
+         "coupling_efficiency": null,
+         "coupling_efficiency_unit": "percent",
+         "item_number": null
+      }
+   ],
+   "lenses": null,
+   "fluorescence_filters": [
+      {
+         "device_type": "Filter",
+         "name": "Emission filter",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Chroma",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "ZET488/561m",
+         "notes": "Custom made filter. No filter wheel.",
+         "filter_type": "Multiband",
+         "diameter": 44.05,
+         "width": null,
+         "height": null,
+         "size_unit": "millimeter",
+         "thickness": 1.0,
+         "thickness_unit": "millimeter",
+         "filter_wheel_index": null,
+         "cut_off_wavelength": null,
+         "cut_on_wavelength": null,
+         "center_wavelength": null,
+         "wavelength_unit": "nanometer",
+         "description": null
+      }
+   ],
+   "motorized_stages": [
+      {
+         "device_type": "MotorizedStage",
+         "name": "Illumination objective stage 1",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Applied Scientific Instrumentation",
+            "abbreviation": "ASI",
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "LS-50",
+         "notes": "translates illumination objective along detection axis. tiger M axis.",
+         "travel": 50,
+         "travel_unit": "millimeter",
+         "firmware": null
+      },
+      {
+         "device_type": "MotorizedStage",
+         "name": "Illumination objective stage 2",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Applied Scientific Instrumentation",
+            "abbreviation": "ASI",
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "LS-50",
+         "notes": "translates illumination objective perpendicular to detection axis. tiger N axis.",
+         "travel": 50,
+         "travel_unit": "millimeter",
+         "firmware": null
+      }
+   ],
+   "scanning_stages": [
+      {
+         "device_type": "MotorizedStage",
+         "name": "X scanning stage",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Applied Scientific Instrumentation",
+            "abbreviation": "ASI",
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "MS-8000",
+         "notes": null,
+         "travel": 1000,
+         "travel_unit": "millimeter",
+         "firmware": null,
+         "stage_axis_direction": "Detection axis",
+         "stage_axis_name": "X"
+      },
+      {
+         "device_type": "MotorizedStage",
+         "name": "Y scanning stage",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Applied Scientific Instrumentation",
+            "abbreviation": "ASI",
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "MS-8000",
+         "notes": null,
+         "travel": 1000,
+         "travel_unit": "millimeter",
+         "firmware": null,
+         "stage_axis_direction": "Perpendicular axis",
+         "stage_axis_name": "Y"
+      },
+      {
+         "device_type": "MotorizedStage",
+         "name": "Z scanning stage",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Applied Scientific Instrumentation",
+            "abbreviation": "ASI",
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "LS-100",
+         "notes": null,
+         "travel": 100,
+         "travel_unit": "millimeter",
+         "firmware": null,
+         "stage_axis_direction": "Illumination axis",
+         "stage_axis_name": "Z"
+      }
+   ],
+   "daqs": [
+      {
+         "device_type": "DAQDevice",
+         "name": "NIDAQ",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "National Instruments",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "026exqw73"
+         },
+         "model": "PCIe-6738",
+         "notes": "Dev2",
+         "data_interface": "PCIe",
+         "computer_name": "W10DTA03416",
+         "channels": [
+            {
+               "channel_name": "AO0",
+               "device_name": "ETL",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO1",
+               "device_name": "Imaging camera",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO2",
+               "device_name": "Z scanning stage",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO3",
+               "device_name": "AOTF RF driver, 488 nm",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO3",
+               "device_name": "AOTF RF driver, 488 nm",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO4",
+               "device_name": "AOTF RF driver, 639 nm",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO13",
+               "device_name": "AOTF RF driver, 561 nm",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO17",
+               "device_name": "Galvo servo 1",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            },
+            {
+               "channel_name": "AO19",
+               "device_name": "Galvo servo 2",
+               "channel_type": "Analog Output",
+               "port": null,
+               "channel_index": null,
+               "sample_rate": 10000,
+               "sample_rate_unit": "hertz",
+               "event_based_sampling": false
+            }
+         ]
+      }
+   ],
+   "additional_devices": [
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "L1",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Other",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "LMPLANFL N 50X",
+         "notes": "L1. first beam expander lens. f = 3.6 mm",
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "L2",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Other",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "7.5X Mitutoyo Plan Apo",
+         "notes": "L2. second beam expander lens. f = 26.67 mm",
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "L3",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "ACY254-050-A-ML",
+         "notes": "L3. cylindrical lens. f = 50 mm",
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "L4",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "AC508-200-A-ML",
+         "notes": "L4. first relay lens. f = 200 mm",
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "L5",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "AC508-300-A-ML",
+         "notes": "L5. second relay lens. f = 300 mm",
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "ETL",
+         "serial_number": "ANAC4286",
+         "manufacturer": {
+            "name": "Optotune",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "EL-16-40-TC-VIS-20D-C",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "Cylindrical lens rotation stage",
+         "serial_number": null,
+         "manufacturer": {
+            "name": "Applied Scientific Instrumentation",
+            "abbreviation": "ASI",
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "C60-3060-CMR-MO",
+         "notes": null,
+         "type": "Rotation mount"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "AOTF",
+         "serial_number": "1002-Q220234",
+         "manufacturer": {
+            "name": "Other",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "AOTFnC-400.650-TN",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "AOTF RF driver",
+         "serial_number": "2001-Q220234",
+         "manufacturer": {
+            "name": "Other",
+            "abbreviation": null,
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "MPDS8C-D65-22-74.158-RS",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "Tiger controller",
+         "serial_number": "2112-2317-8584-5632-5631",
+         "manufacturer": {
+            "name": "Applied Scientific Instrumentation",
+            "abbreviation": "ASI",
+            "registry": null,
+            "registry_identifier": null
+         },
+         "model": "TG8-XY:A(Xb)H-Z/F:5A:FTP",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "NIDAQ breakout board",
+         "serial_number": "1FCD210",
+         "manufacturer": {
+            "name": "National Instruments",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "026exqw73"
+         },
+         "model": "SCB-68A",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "Galvo 1",
+         "serial_number": "20375",
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "QS20Y-AG",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "Galvo 2",
+         "serial_number": "20385",
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "QS20Y-AG",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "Galvo servo 1",
+         "serial_number": "02232",
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "QS20Y-AG",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "Galvo servo 2",
+         "serial_number": "02216",
+         "manufacturer": {
+            "name": "Thorlabs",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "04gsnvb07"
+         },
+         "model": "QS20Y-AG",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "488 nm laser 210 Watt Thermoelectric Chiller with Coherent Logo",
+         "serial_number": "A76636",
+         "manufacturer": {
+            "name": "Coherent Scientific",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "031tysd23"
+         },
+         "model": "0P9T257P30",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "561 nm laser 210 Watt Thermoelectric Chiller with Coherent Logo",
+         "serial_number": "A76626",
+         "manufacturer": {
+            "name": "Coherent Scientific",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "031tysd23"
+         },
+         "model": "0P9T257P30",
+         "notes": null,
+         "type": "Other"
+      },
+      {
+         "device_type": "AdditionalImagingDevice",
+         "name": "639 nm laser 210 Watt Thermoelectric Chiller with Coherent Logo",
+         "serial_number": "A76606",
+         "manufacturer": {
+            "name": "Coherent Scientific",
+            "abbreviation": null,
+            "registry": {
+               "name": "Research Organization Registry",
+               "abbreviation": "ROR"
+            },
+            "registry_identifier": "031tysd23"
+         },
+         "model": "0P9T257P30",
+         "notes": null,
+         "type": "Other"
+      }
+   ],
+   "calibration_date": null,
+   "calibration_data": null,
+   "com_ports": [
+      {
+         "hardware_name": "AOTF RF driver",
+         "com_port": "COM13"
+      },
+      {
+         "hardware_name": "Tiger Controller",
+         "com_port": "COM5"
+      }
+   ],
+   "notes": null
+}

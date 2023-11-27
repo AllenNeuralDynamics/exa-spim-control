@@ -39,23 +39,25 @@ daq_driver_kwds:
   dev_name: "Dev1"
   samples_per_sec: 10000.0
   livestream_frequency_hz: 2.0
-daq_driver_kwds.ao_channels:
-  etl: 1
-  camera: 2
-  stage: 0
-  laser_488: 5
-  laser_638: 3
-  laser_561: 4
+  ao_channels:
+    etl: 1
+    camera: 2
+    stage: 0
+    laser_488: 5
+    laser_638: 3
+    laser_561: 4
 tiger_controller_driver_kwds:
   com_port: "COM3"
-joystick_kwds.axis_map:
-  x: 2
-  y: 3
-  z: 22
-sample_pose_kwds.axis_map:
-  x: "y"
-  y: "z"
-  z: "x"
+joystick_kwds:
+  axis_map:
+    x: 2
+    y: 3
+    z: 22
+sample_pose_kwds:
+  axis_map:
+    x: "y"
+    y: "z"
+    z: "x"
 channel_specs:
   '488':
     kwds:
