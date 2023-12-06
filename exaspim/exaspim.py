@@ -95,6 +95,7 @@ class Exaspim(Spim):
         # self._grab_background_image()
         self.chunk_lock = threading.Lock()
         self.stage_lock = threading.Lock()
+        self.gpu_down_sample_lock = threading.Lock()
     def _setup_joystick(self):
         """Configure joystick based on value in config"""
 
@@ -305,7 +306,10 @@ class Exaspim(Spim):
         self.log.info('axes_data', extra=axes_data)
 
         # Update internal state.
-        self.total_tiles = xtiles * ytiles * ztiles * len(channels)
+        self.total_tiles = 0
+        for ch in channels:
+            self.total_tiles += (ztiles/self.cfg.get_binning(ch))
+        self.total_tiles += self.total_tiles * xtiles * ytiles
         self.log.debug(f"Total tiles: {self.total_tiles}.")
         self.log.debug(f"Grid step: {x_grid_step_um:.3f}[um] in x, "
                        f"{y_grid_step_um:.3f}[um] in y.")
@@ -339,6 +343,7 @@ class Exaspim(Spim):
                     self.sample_pose.move_absolute(
                         y=round(self.stage_y_pos_um * STEPS_PER_UM), wait=True)
                     for ch in channels:
+                        self.active_lasers = ch
                         binning = self.cfg.get_binning(ch)
                         self._setup_waveform_hardware(ch)
 
@@ -405,6 +410,7 @@ class Exaspim(Spim):
         finally:
             self.sample_pose.move_absolute(x=0, y=0, wait=True)
             self.ni.close()
+            self.active_lasers = None
 
         acquisition_params = {'session_end_time': datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
                               'tags': ['schema']}
@@ -483,7 +489,7 @@ class Exaspim(Spim):
             self.background_image.set()
             self.log.info("Starting background image.")
             bkg_img = self.cam.collect_background(frame_average=10)
-            bkg_img = self.downsampler.compute(bkg_img, int(np.log2(binning)))[-1]
+            bkg_img = self.downsampler.compute(bkg_img, binning, 1, mode='sum')[-1]
             # Save background image TIFF file
             tifffile.imwrite(str((deriv_storage_dir / Path(f"bkg_{stack_prefix}_ch_{ch}.tiff")).absolute()), bkg_img)
             self.log.info("Completed background image.")
@@ -562,8 +568,9 @@ class Exaspim(Spim):
                         self.img_buffers[ch_index].write_buf[chunk_index] = \
                             self.cam.grab_frame()
                     else:
-                        self.img_buffers[ch_index].write_buf[chunk_index] = \
-                            self.downsampler.compute(self.cam.grab_frame(), int(np.log2(binning)))[-1]
+                        with self.gpu_down_sample_lock:
+                            self.img_buffers[ch_index].write_buf[chunk_index] = \
+                                self.downsampler.compute(self.cam.grab_frame(), binning, 1, mode='sum')[-1]
                     # Also write a copy of the latest image to a location where
                     # the MIP processor can process it.
                     # First make sure that the mip process isn't using previous
@@ -739,26 +746,27 @@ class Exaspim(Spim):
         """
         img_buffer = self.img_buffers.get(channel, None)  # Not None during acquisition.
 
-        if img_buffer and self.prev_frame_chunk_index is not None and self.acquiring_images:
+        if img_buffer and self.prev_frame_chunk_index is not None and self.acquiring_images and not self.gpu_down_sample_lock.locked():
             # Only access buffer if it isn't being toggled.
-            with self.chunk_lock:
+            with self.chunk_lock and self.gpu_down_sample_lock:
                 self.log.debug('Calling downsample from get_latest_image')
                 try:
-                    return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index], 5)
-                except:
-                    return None
+                    return self.downsampler.compute(self.img_buffers[channel].write_buf[self.prev_frame_chunk_index], 2, 5, mode='average')
+                except Exception as e:
+                    print('failed to downsample latest image because: ')
+                    print(e)
 
         # Return a dummy image if none are available.
         if not img_buffer or self.prev_frame_chunk_index is None or not self.acquiring_images:
             try:
                 if self.livestream_enabled.is_set():
                     temp = self.cam.grab_frame()
-                    return self.downsampler.compute(temp, levels=5)
+                    return self.downsampler.compute(temp, 2, levels=5, mode='average')
                 elif self.simulated:
                     # Display "white noise" if no image is available.
                     return self.downsampler.compute(np.random.randint(0, 255, size=(self.cfg.sensor_row_count,
                                                                                     self.cfg.sensor_column_count),
-                                                                      dtype=self.cfg.image_dtype), 5)
+                                                                      dtype=self.cfg.image_dtype), 5, mode='average')
             except:
                 return None
 
