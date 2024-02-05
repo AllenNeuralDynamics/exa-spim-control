@@ -87,8 +87,12 @@ class NI:
             self.ao_task.control(TaskMode.TASK_UNRESERVE)   # Unreserve buffer
             self.ao_task.out_stream.output_buf_size = len(voltages_t[0])  # Sets buffer to length of voltages
             self.ao_task.control(TaskMode.TASK_COMMIT)
-
-        self.ao_task.write(voltages_t)
+        try:
+            self.ao_task.write(voltages_t)
+        except:
+            self.ao_task.control(TaskMode.TASK_UNRESERVE)  # Unreserve buffer
+            self.ao_task.out_stream.output_buf_size = len(voltages_t[0])  # Sets buffer to length of voltages
+            self.ao_task.control(TaskMode.TASK_COMMIT)
 
     def set_pulse_count(self, pulse_count: int = None):
         """Set the number of pulses to generate or None if pulsing continuously.

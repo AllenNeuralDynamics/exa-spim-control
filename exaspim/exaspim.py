@@ -70,7 +70,7 @@ class Exaspim(Spim):
         self.stage_z_pos_um = None  # Current z position in [um]
         self.start_pos = None  # Start position of scan
         self.start_time = None # Start time of scan
-        self.tile_time_s = None # Time it takes to complete one stack
+        self.tile_time_s = 18000 # Time it takes to complete one stack
         self.stack_transfer_workers = {}  # moves z-stacks to destination folder.
         self.lasers = {}  # populated in _setup_lasers.
 
@@ -349,8 +349,8 @@ class Exaspim(Spim):
 
                         # move asi focus motor
                         focus_position = self.cfg.get_focus_position(ch)
-                        assert focus_position < -500
-                        assert focus_position > -1500
+                        assert focus_position < -2700
+                        assert focus_position > -3700
                         self.tigerbox.move_absolute(n=round(focus_position * STEPS_PER_UM))
 
                         if start_tile_index <= self.curr_tile_index <= end_tile_index:
